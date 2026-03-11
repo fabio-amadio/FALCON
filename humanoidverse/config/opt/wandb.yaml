@@ -7,5 +7,5 @@ wandb:
   wandb_tags: 'online' # 'online' or 'offline' or 'disabled'
   wandb_group: null
   wandb_id: null
-  wandb_entity: hang0610 # 'hang0610'
+  wandb_entity: fabioamadio93-inria
   wandb_dir: ${experiment_dir}/.wandb
