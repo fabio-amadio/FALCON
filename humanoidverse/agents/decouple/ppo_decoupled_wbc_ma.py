@@ -447,19 +447,17 @@ class PPOMultiActorCritic(PPO):
                         ep_info[key] = ep_info[key].unsqueeze(0)
                     infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
                 value = self._to_scalar(torch.mean(infotensor))
-                metric_name = 'Episode/' + key
+
+                if key.startswith('rew_'):
+                    reward_name = key[4:]
+                    reward_group = reward_to_group.get(reward_name, "ungrouped")
+                    metric_name = f"Episode/rew/{reward_group}/{reward_name}"
+                else:
+                    metric_name = 'Episode/' + key
+
                 self.writer.add_scalar(metric_name, value, log_dict['it'])
                 episode_log_dict[metric_name] = value
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
-
-                # Duplicate per-term rewards under lower/upper groups for easier W&B filtering.
-                if key.startswith('rew_'):
-                    reward_name = key[4:]
-                    reward_group = reward_to_group.get(reward_name)
-                    if reward_group is not None:
-                        grouped_metric_name = f"Episode/{reward_group}/{reward_name}"
-                        self.writer.add_scalar(grouped_metric_name, value, log_dict['it'])
-                        episode_log_dict[grouped_metric_name] = value
 
         train_log_dict = {}
         fps = int(self.num_steps_per_env * self.env.num_envs / (log_dict['collection_time'] + log_dict['learn_time']))
