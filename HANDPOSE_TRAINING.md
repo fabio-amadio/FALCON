@@ -1,6 +1,6 @@
-# Hand-Pose Training Instructions
+# Hand-Pose Instructions
 
-## Base command (custom hand-pose env)
+## Training command
 
 ```bash
 python humanoidverse/train_agent.py \
@@ -36,9 +36,14 @@ So you do **not** need to pass `+rewards=...` separately unless you want to over
 - Disable observation noise:
   - `obs.add_noise=False`
 
-## Notes
+## Play command
 
-- W&B step is logged against `trainer/learning_iteration`.
-- Episode reward terms are available under `Episode/rew_*` and grouped aliases under:
-  - `Episode/lower_body/*`
-  - `Episode/upper_body/*`
+```bash
+python humanoidverse/eval_agent.py \
++checkpoint=/path/to/your/model.pt \
++env.config.debug_draw_hand_frames=True \
++env.config.debug_draw_hand_frames_num_envs=1 \
++env.config.debug_draw_hand_frame_axis_scale=0.12 \
++env.config.debug_draw_hand_frame_axis_scale_command=0.09 \
++headless=False
+```

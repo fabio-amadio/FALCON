@@ -566,6 +566,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPosesForce(LeggedRobotDec
                                         Point(color),
                                         env_id)
 
+        self._draw_hand_pose_debug_frames(clear_lines=False)
+
     ############################ Curriculum #############################
     def _update_upper_body_tracking_sigma_curriculum(self, env_ids):
         """ Implement upper body tracking sigma curriculum based on the tracking performance

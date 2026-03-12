@@ -8,6 +8,7 @@ from isaac_utils.rotations import quat_apply_yaw, wrap_to_pi
 
 from humanoidverse.envs.decoupled_locomotion_handpose.decoupled_locomotion_stand_ma import LeggedRobotDecoupledLocomotionStance
 from humanoidverse.utils.motion_lib.torch_humanoid_batch import Humanoid_Batch
+from humanoidverse.envs.env_utils.visualization import Point
 
 from loguru import logger
 
@@ -63,6 +64,18 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPoses(LeggedRobotDecouple
         self.command_hand_pose_local = torch.zeros(self.num_envs, 14, dtype=torch.float32, device=self.device, requires_grad=False)
         self.fixed_hand_pose_local_template = torch.zeros(14, dtype=torch.float32, device=self.device, requires_grad=False)
         self.fixed_hand_pose_initialized = False
+        self.debug_draw_hand_frames = bool(self.config.get("debug_draw_hand_frames", False))
+        self.debug_draw_hand_frames_num_envs = int(self.config.get("debug_draw_hand_frames_num_envs", 1))
+        self.debug_draw_hand_frame_axis_scale = float(self.config.get("debug_draw_hand_frame_axis_scale", 0.12))
+        self.debug_draw_hand_frame_axis_scale_command = float(self.config.get("debug_draw_hand_frame_axis_scale_command", 0.09))
+        self._debug_frame_axes = torch.tensor(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            dtype=torch.float32,
+            device=self.device,
+            requires_grad=False,
+        )
+        self._debug_actual_axis_colors = ((1.0, 0.1, 0.1), (0.1, 1.0, 0.1), (0.1, 0.3, 1.0))
+        self._debug_command_axis_colors = ((1.0, 0.7, 0.7), (0.7, 1.0, 0.7), (0.7, 0.8, 1.0))
         self._handpose_fk_parser = None
         self.episode_motion_length = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device, requires_grad=False)
         self.tapping_in_place = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
@@ -263,6 +276,91 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPoses(LeggedRobotDecouple
         hand_pose_local[:, 10:14] = right_hand_quat_local
         return hand_pose_local
 
+
+    def _compute_commanded_hand_pose_world(self):
+        torso_pos_world = self.simulator._rigid_body_pos[:, self.torso_index, :3]
+        torso_quat_world = self.simulator._rigid_body_rot[:, self.torso_index, :4]
+        cmd = self.command_hand_pose_local
+
+        left_hand_pos_world = quat_rotate(torso_quat_world, cmd[:, 0:3]) + torso_pos_world
+        right_hand_pos_world = quat_rotate(torso_quat_world, cmd[:, 7:10]) + torso_pos_world
+        left_hand_quat_world = quat_mul(torso_quat_world, cmd[:, 3:7])
+        right_hand_quat_world = quat_mul(torso_quat_world, cmd[:, 10:14])
+        left_hand_quat_world = left_hand_quat_world / torch.norm(left_hand_quat_world, dim=-1, keepdim=True).clamp_min(1e-6)
+        right_hand_quat_world = right_hand_quat_world / torch.norm(right_hand_quat_world, dim=-1, keepdim=True).clamp_min(1e-6)
+
+        return left_hand_pos_world, left_hand_quat_world, right_hand_pos_world, right_hand_quat_world
+
+    def _draw_pose_axes(self, env_id, origin, quat, axis_scale, axis_colors):
+        axis_dirs = quat_rotate(quat.unsqueeze(0).repeat(3, 1), self._debug_frame_axes)
+        for axis_id in range(3):
+            axis_end = origin + axis_dirs[axis_id] * axis_scale
+            self.simulator.draw_line(
+                Point(origin),
+                Point(axis_end),
+                Point(axis_colors[axis_id]),
+                env_id,
+            )
+
+    def _draw_hand_pose_debug_frames(self, clear_lines=False):
+        if not self.debug_draw_hand_frames:
+            return
+
+        if clear_lines:
+            self.simulator.clear_lines()
+            self._refresh_sim_tensors()
+
+        max_envs = min(self.num_envs, max(1, self.debug_draw_hand_frames_num_envs))
+
+        left_actual_pos, left_actual_quat = self._get_body_pose_world(self.left_hand_command_link_id)
+        right_actual_pos, right_actual_quat = self._get_body_pose_world(self.right_hand_command_link_id)
+        left_cmd_pos, left_cmd_quat, right_cmd_pos, right_cmd_quat = self._compute_commanded_hand_pose_world()
+
+        for env_id in range(max_envs):
+            self._draw_pose_axes(
+                env_id,
+                left_actual_pos[env_id],
+                left_actual_quat[env_id],
+                self.debug_draw_hand_frame_axis_scale,
+                self._debug_actual_axis_colors,
+            )
+            self._draw_pose_axes(
+                env_id,
+                right_actual_pos[env_id],
+                right_actual_quat[env_id],
+                self.debug_draw_hand_frame_axis_scale,
+                self._debug_actual_axis_colors,
+            )
+            self._draw_pose_axes(
+                env_id,
+                left_cmd_pos[env_id],
+                left_cmd_quat[env_id],
+                self.debug_draw_hand_frame_axis_scale_command,
+                self._debug_command_axis_colors,
+            )
+            self._draw_pose_axes(
+                env_id,
+                right_cmd_pos[env_id],
+                right_cmd_quat[env_id],
+                self.debug_draw_hand_frame_axis_scale_command,
+                self._debug_command_axis_colors,
+            )
+
+            self.simulator.draw_line(
+                Point(left_actual_pos[env_id]),
+                Point(left_cmd_pos[env_id]),
+                Point((1.0, 1.0, 0.0)),
+                env_id,
+            )
+            self.simulator.draw_line(
+                Point(right_actual_pos[env_id]),
+                Point(right_cmd_pos[env_id]),
+                Point((0.0, 1.0, 1.0)),
+                env_id,
+            )
+
+    def _draw_debug_vis(self):
+        self._draw_hand_pose_debug_frames(clear_lines=True)
 
     def _resample_commands(self, env_ids):
         if self._motion_lib and not self.config.robot.motion.reverse_motion: self._resample_motion_times(env_ids)

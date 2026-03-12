@@ -50,6 +50,12 @@ env:
     left_hand_command_link: "left_hand_link"
     right_hand_command_link: "right_hand_link"
 
+    # Debug hand-frame visualization (viewer only)
+    debug_draw_hand_frames: False
+    debug_draw_hand_frames_num_envs: 1
+    debug_draw_hand_frame_axis_scale: 0.12
+    debug_draw_hand_frame_axis_scale_command: 0.09
+
     # Force 
     max_force_estimation: True
     update_apply_force_phase: True
