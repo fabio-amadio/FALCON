@@ -40,10 +40,10 @@ So you do **not** need to pass `+rewards=...` separately unless you want to over
 
 ```bash
 python humanoidverse/eval_agent.py \
-+checkpoint=/path/to/your/model.pt \
-+env.config.debug_draw_hand_frames=True \
-+env.config.debug_draw_hand_frames_num_envs=1 \
-+env.config.debug_draw_hand_frame_axis_scale=0.12 \
-+env.config.debug_draw_hand_frame_axis_scale_command=0.09 \
-+headless=False
+checkpoint=/path/to/your/model.pt \
+env.config.debug_draw_hand_frames=True \
+env.config.debug_draw_hand_frames_num_envs=1 \
+env.config.debug_draw_hand_frame_axis_scale=0.12 \
+env.config.debug_draw_hand_frame_axis_scale_command=0.09 \
+headless=False
 ```
