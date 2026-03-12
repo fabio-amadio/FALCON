@@ -120,6 +120,14 @@ rewards.reward_penalty_degree=0.0001
 python humanoidverse/eval_agent.py \
 +checkpoint=<path_to_your_ckpt>
 ```
+
+```bash
+# Export ONNX only (no evaluation loop)
+python humanoidverse/eval_agent.py \
++checkpoint=<path_to_your_ckpt> \
++export_onnx=True \
++export_only=True
+```
 </details>
 
 
@@ -171,6 +179,14 @@ env.config.apply_force_pos_ratio_range=[0.5,2.0]
 ```bash
 python humanoidverse/eval_agent.py \
 +checkpoint=<path_to_your_ckpt>
+```
+
+```bash
+# Export ONNX only (no evaluation loop)
+python humanoidverse/eval_agent.py \
++checkpoint=<path_to_your_ckpt> \
++export_onnx=True \
++export_only=True
 ```
 </details>
 

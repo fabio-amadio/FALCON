@@ -116,29 +116,45 @@ def main(override_config: OmegaConf):
     algo.setup()
     algo.load(config.checkpoint)
 
-    EXPORT_ONNX = True
-    EXPORT_POLICY = False
+    export_onnx = bool(config.get("export_onnx", False))
+    export_policy = bool(config.get("export_policy", False))
+    export_only = bool(config.get("export_only", False))
     checkpoint_path = str(checkpoint)
 
-    checkpoint_dir = os.path.dirname(checkpoint_path)
-
-    # from checkpoint path
-
-    humanoidverse_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    exported_policy_path = os.path.join(humanoidverse_ROOT_DIR, checkpoint_dir, 'exported')
+    exported_policy_path = str((checkpoint.parent / "exported").resolve())
     os.makedirs(exported_policy_path, exist_ok=True)
-    exported_policy_name = checkpoint_path.split('/')[-1]
-    exported_onnx_name = exported_policy_name.replace('.pt', '.onnx')
+    exported_policy_name = checkpoint.name
+    exported_onnx_name = checkpoint.stem + ".onnx"
 
-    if EXPORT_POLICY:
-        export_policy_as_jit(algo.alg.actor_critic, exported_policy_path, exported_policy_name)
-        logger.info('Exported policy as jit script to: ', os.path.join(exported_policy_path, exported_policy_name))
-    if EXPORT_ONNX:
-        example_obs_dict = algo.get_example_obs()
-        export_multi_agent_decouple_policy_as_onnx(algo.inference_model, exported_policy_path, exported_onnx_name, example_obs_dict, 
-                                                   config.robot.get('body_keys', ['lower_body', 'upper_body']))
-        logger.info(f'Body keys: {config.robot.get("body_keys", ["lower_body", "upper_body"])}')
-        logger.info(f'Exported policy as onnx to: {os.path.join(exported_policy_path, exported_onnx_name)}')
+    logger.info(f"Export directory: {exported_policy_path}")
+
+    if export_policy:
+        try:
+            export_policy_as_jit(algo.alg.actor_critic, exported_policy_path, exported_policy_name)
+            logger.info(f"Exported policy as jit script to: {os.path.join(exported_policy_path, exported_policy_name)}")
+        except Exception as exc:
+            logger.exception(f"JIT export failed: {exc}")
+    if export_onnx:
+        try:
+            example_obs_dict = algo.get_example_obs()
+            export_multi_agent_decouple_policy_as_onnx(
+                algo.inference_model,
+                exported_policy_path,
+                exported_onnx_name,
+                example_obs_dict,
+                config.robot.get("body_keys", ["lower_body", "upper_body"]),
+            )
+            onnx_out = os.path.join(exported_policy_path, exported_onnx_name)
+            logger.info(f'Body keys: {config.robot.get("body_keys", ["lower_body", "upper_body"])}')
+            logger.info(f"Exported policy as onnx to: {onnx_out}")
+            if not os.path.exists(onnx_out):
+                logger.error(f"ONNX export did not produce file at: {onnx_out}")
+        except Exception as exc:
+            logger.exception(f"ONNX export failed: {exc}")
+
+    if export_only:
+        logger.info("Export-only mode enabled, skipping evaluation loop.")
+        return
 
     algo.evaluate_policy()
 
