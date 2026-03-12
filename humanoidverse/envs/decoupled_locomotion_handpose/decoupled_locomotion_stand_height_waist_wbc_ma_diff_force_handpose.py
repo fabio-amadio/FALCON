@@ -494,39 +494,41 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPosesForce(LeggedRobotDec
     def _pre_compute_observations_callback(self):
         super()._pre_compute_observations_callback()
         B = self.motion_ids.shape[0]
-        ################### EXTEND Rigid body POS #####################
-        rotated_pos_in_parent = my_quat_rotate(
-            self.simulator._rigid_body_rot[:, self.extend_body_parent_ids].reshape(-1, 4),
-            self.extend_body_pos_in_parent.reshape(-1, 3)
-        )
-        self.extend_curr_pos = my_quat_rotate(
-            self.extend_body_rot_in_parent_xyzw.reshape(-1, 4),
-            rotated_pos_in_parent
-        ).view(self.num_envs, -1, 3) + self.simulator._rigid_body_pos[:, self.extend_body_parent_ids]
-        self._rigid_body_pos_extend = torch.cat([self.simulator._rigid_body_pos, self.extend_curr_pos], dim=1)
-        self.marker_coords[:] = self._rigid_body_pos_extend.reshape(B, -1, 3) # visualize the robot rigid body pos
-        # self.marker_coords[:] = self.ref_body_pos_extend.reshape(B, -1, 3) # visualize the target rigid body pos
-        # Hardcode: decide which one to use
-        # 1. Apply forces within randomly sample shperes
-        # left_ee_apply_force_pos = apply_sphere_sample_to_segments(self.simulator._rigid_body_pos[:, self.left_hand_link_index, :],
-        #                                                           self.extend_curr_pos[:, 0, :], 
-        #                                                           self.left_fp_unit_dirs, self.left_fp_radius_scales)
-        # right_ee_apply_force_pos = apply_sphere_sample_to_segments(self.simulator._rigid_body_pos[:, self.right_hand_link_index, :], 
-        #                                                            self.extend_curr_pos[:, 1, :], 
-        #                                                            self.right_fp_unit_dirs, self.right_fp_radius_scales)
-        
-        # 2. Apply force between the hand link and the sampled sphere
-        left_ee_apply_force_pos = (self.extend_curr_pos[:, 0, :] - self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]) * self.left_ee_apply_force_pos_ratio + self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
-        right_ee_apply_force_pos = (self.extend_curr_pos[:, 1, :] - self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]) * self.right_ee_apply_force_pos_ratio + self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
-        # 3. Apply force at the hand links
-        # self.apply_force_pos_tensor[:, self.left_hand_link_index,:] = self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
-        # self.apply_force_pos_tensor[:, self.right_hand_link_index,:] = self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
+
+        if self.num_extend_bodies > 0:
+            ################### EXTEND Rigid body POS #####################
+            rotated_pos_in_parent = my_quat_rotate(
+                self.simulator._rigid_body_rot[:, self.extend_body_parent_ids].reshape(-1, 4),
+                self.extend_body_pos_in_parent.reshape(-1, 3)
+            )
+            self.extend_curr_pos = my_quat_rotate(
+                self.extend_body_rot_in_parent_xyzw.reshape(-1, 4),
+                rotated_pos_in_parent
+            ).view(self.num_envs, -1, 3) + self.simulator._rigid_body_pos[:, self.extend_body_parent_ids]
+            self._rigid_body_pos_extend = torch.cat([self.simulator._rigid_body_pos, self.extend_curr_pos], dim=1)
+            self.marker_coords[:] = self._rigid_body_pos_extend.reshape(B, -1, 3) # visualize the robot rigid body pos
+
+            # Apply force between hand links and extend targets when both are available.
+            if self.num_extend_bodies >= 2:
+                left_ee_apply_force_pos = (self.extend_curr_pos[:, 0, :] - self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]) * self.left_ee_apply_force_pos_ratio + self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
+                right_ee_apply_force_pos = (self.extend_curr_pos[:, 1, :] - self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]) * self.right_ee_apply_force_pos_ratio + self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
+            else:
+                left_ee_apply_force_pos = self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
+                right_ee_apply_force_pos = self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
+        else:
+            # Fallback: no extend bodies configured; apply forces directly at hand links.
+            self.extend_curr_pos = torch.zeros((self.num_envs, 0, 3), device=self.device)
+            self._rigid_body_pos_extend = self.simulator._rigid_body_pos
+            self.marker_coords[:] = self._rigid_body_pos_extend.reshape(B, -1, 3)
+            left_ee_apply_force_pos = self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
+            right_ee_apply_force_pos = self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
+
         self.apply_force_pos_tensor[:, self.left_hand_link_index,:] = left_ee_apply_force_pos
         self.apply_force_pos_tensor[:, self.right_hand_link_index,:] = right_ee_apply_force_pos
         if self.is_evaluating:
             # self.ref_upper_dof_pos *= 0
             pass
-    
+
     def _draw_debug_vis(self):
         self.simulator.clear_lines()
         self._refresh_sim_tensors()

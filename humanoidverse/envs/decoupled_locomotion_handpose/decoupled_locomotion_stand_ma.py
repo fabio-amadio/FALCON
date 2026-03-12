@@ -79,6 +79,13 @@ class LeggedRobotDecoupledLocomotionStance(LeggedRobotLocomotion):
             self.resample_time_interval = np.ceil(self.config.resample_time_interval_s / self.dt)
         
     def _init_motion_extend(self):
+        # Always initialize extend-related attributes so downstream code can rely on them.
+        self.num_extend_bodies = 0
+        self.extend_body_parent_ids = torch.zeros(0, device=self.device, dtype=torch.long)
+        self.extend_body_pos_in_parent = torch.zeros(self.num_envs, 0, 3, device=self.device, dtype=torch.float)
+        self.extend_body_rot_in_parent_wxyz = torch.zeros(self.num_envs, 0, 4, device=self.device, dtype=torch.float)
+        self.extend_body_rot_in_parent_xyzw = torch.zeros(self.num_envs, 0, 4, device=self.device, dtype=torch.float)
+
         if "extend_config" in self.config.robot.motion:
             extend_parent_ids, extend_pos, extend_rot = [], [], []
             for extend_config in self.config.robot.motion.extend_config:
@@ -87,20 +94,27 @@ class LeggedRobotDecoupledLocomotionStance(LeggedRobotLocomotion):
                 extend_rot.append(extend_config["rot"])
                 self.simulator._body_list.append(extend_config["joint_name"])
 
-            self.extend_body_parent_ids = torch.tensor(extend_parent_ids, device=self.device, dtype=torch.long)
-            self.extend_body_pos_in_parent = torch.tensor(extend_pos).repeat(self.num_envs, 1, 1).to(self.device)
-            self.extend_body_rot_in_parent_wxyz = torch.tensor(extend_rot).repeat(self.num_envs, 1, 1).to(self.device)
-            self.extend_body_rot_in_parent_xyzw = self.extend_body_rot_in_parent_wxyz[:, :, [1, 2, 3, 0]]
-            self.num_extend_bodies = len(extend_parent_ids)
+            if len(extend_parent_ids) > 0:
+                self.extend_body_parent_ids = torch.tensor(extend_parent_ids, device=self.device, dtype=torch.long)
+                self.extend_body_pos_in_parent = torch.tensor(extend_pos).repeat(self.num_envs, 1, 1).to(self.device)
+                self.extend_body_rot_in_parent_wxyz = torch.tensor(extend_rot).repeat(self.num_envs, 1, 1).to(self.device)
+                self.extend_body_rot_in_parent_xyzw = self.extend_body_rot_in_parent_wxyz[:, :, [1, 2, 3, 0]]
+                self.num_extend_bodies = len(extend_parent_ids)
 
-            self.marker_coords = torch.zeros(self.num_envs, 
-                                         self.num_bodies + self.num_extend_bodies, 
-                                         3, 
-                                         dtype=torch.float, 
-                                         device=self.device, 
-                                         requires_grad=False) # extend
-            self.ref_body_pos_extend = torch.zeros(self.num_envs, self.num_bodies + self.num_extend_bodies, 3, dtype=torch.float, device=self.device, requires_grad=False)
-            self.dif_global_body_pos = torch.zeros(self.num_envs, self.num_bodies + self.num_extend_bodies, 3, dtype=torch.float, device=self.device, requires_grad=False)
+        self.marker_coords = torch.zeros(
+            self.num_envs,
+            self.num_bodies + self.num_extend_bodies,
+            3,
+            dtype=torch.float,
+            device=self.device,
+            requires_grad=False,
+        )
+        self.ref_body_pos_extend = torch.zeros(
+            self.num_envs, self.num_bodies + self.num_extend_bodies, 3, dtype=torch.float, device=self.device, requires_grad=False
+        )
+        self.dif_global_body_pos = torch.zeros(
+            self.num_envs, self.num_bodies + self.num_extend_bodies, 3, dtype=torch.float, device=self.device, requires_grad=False
+        )
 
     def _init_buffers(self):
         super()._init_buffers()
