@@ -216,6 +216,31 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPoses(LeggedRobotDecouple
         self.fixed_hand_pose_local_template[:] = fixed_pose_local[0]
         self.fixed_hand_pose_initialized = True
 
+    def _get_body_pose_world(self, body_id):
+        """Return body pose in world frame for both real and extend bodies."""
+        if body_id < self.num_bodies:
+            pos_world = self.simulator._rigid_body_pos[:, body_id, :3]
+            quat_world = self.simulator._rigid_body_rot[:, body_id, :4]
+            return pos_world, quat_world
+
+        ext_id = body_id - self.num_bodies
+        if ext_id < 0 or ext_id >= self.num_extend_bodies:
+            raise IndexError(
+                f"Body id {body_id} is out of range (num_bodies={self.num_bodies}, num_extend_bodies={self.num_extend_bodies})"
+            )
+
+        parent_id = int(self.extend_body_parent_ids[ext_id].item())
+        parent_pos = self.simulator._rigid_body_pos[:, parent_id, :3]
+        parent_rot = self.simulator._rigid_body_rot[:, parent_id, :4]
+
+        local_pos = self.extend_body_pos_in_parent[:, ext_id, :]
+        local_rot = self.extend_body_rot_in_parent_xyzw[:, ext_id, :]
+
+        pos_world = quat_rotate(parent_rot, local_pos) + parent_pos
+        quat_world = quat_mul(parent_rot, local_rot)
+        quat_world = quat_world / torch.norm(quat_world, dim=-1, keepdim=True).clamp_min(1e-6)
+        return pos_world, quat_world
+
     def _compute_hand_pose_local(self, left_hand_pos_world, left_hand_quat_world, right_hand_pos_world, right_hand_quat_world, torso_pos_world=None, torso_quat_world=None):
         if torso_pos_world is None:
             torso_pos_world = self.simulator._rigid_body_pos[:, self.torso_index, :3]
@@ -615,10 +640,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPoses(LeggedRobotDecouple
         return torch.exp(-upper_body_dofs_error/self.config.rewards.reward_tracking_sigma.upper_body_dofs)
 
     def _reward_tracking_command_hand_pose(self):
-        left_hand_pos_world = self.simulator._rigid_body_pos[:, self.left_hand_command_link_id, :3]
-        left_hand_quat_world = self.simulator._rigid_body_rot[:, self.left_hand_command_link_id, :4]
-        right_hand_pos_world = self.simulator._rigid_body_pos[:, self.right_hand_command_link_id, :3]
-        right_hand_quat_world = self.simulator._rigid_body_rot[:, self.right_hand_command_link_id, :4]
+        left_hand_pos_world, left_hand_quat_world = self._get_body_pose_world(self.left_hand_command_link_id)
+        right_hand_pos_world, right_hand_quat_world = self._get_body_pose_world(self.right_hand_command_link_id)
 
         curr_hand_pose_local = self._compute_hand_pose_local(
             left_hand_pos_world, left_hand_quat_world, right_hand_pos_world, right_hand_quat_world
