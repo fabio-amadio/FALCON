@@ -559,11 +559,9 @@ class PPO(BaseAlgo):
             self.writer.add_scalar('Train/mean_reward', mean_reward, log_dict['it'])
             self.writer.add_scalar('Train/mean_episode_length', mean_episode_length, log_dict['it'])
             self.writer.add_scalar('Train/mean_reward/time', mean_reward, self.tot_time)
-            self.writer.add_scalar('Train/mean_episode_length/time', mean_episode_length, self.tot_time)
             wandb_metrics['Train/mean_reward'] = float(mean_reward)
             wandb_metrics['Train/mean_episode_length'] = float(mean_episode_length)
-            wandb_metrics['Train/mean_reward_time'] = float(mean_reward)
-            wandb_metrics['Train/mean_episode_length_time'] = float(mean_episode_length)
+        env_log_dict.pop('Env/average_episode_length', None)
         if len(env_log_dict) > 0:
             for k, v in env_log_dict.items():
                 self.writer.add_scalar(k, v, log_dict['it'])

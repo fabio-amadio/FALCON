@@ -531,10 +531,6 @@ class PPOMultiActorCritic(PPO):
             wandb_metrics[f'Loss/actor_learning_rate_{key}'] = float(self.actor_learning_rates[key])
             wandb_metrics[f'Loss/critic_learning_rate_{key}'] = float(self.critic_learning_rates[key])
             wandb_metrics[f'Policy/mean_noise_std_{key}'] = float(train_log_dict['mean_std'][key])
-            if self.config.get('log_all_action_std', False):
-                for i, std_val in enumerate(self.actors[key].std.tolist()):
-                    self.writer.add_scalar(f'Policy/action_std_{key}/dim_{i}', std_val, log_dict['it'])
-                    wandb_metrics[f'Policy/action_std_{key}/dim_{i}'] = float(std_val)
             # Log min std dim and value
             self.writer.add_scalar(f'Policy/min_noise_std_val_{key}', self.actors[key].std.min().item(), log_dict['it'])
             self.writer.add_scalar(f'Policy/min_noise_std_dim_{key}', torch.argmin(self.actors[key].std).item(), log_dict['it'])
@@ -553,19 +549,16 @@ class PPOMultiActorCritic(PPO):
             self.writer.add_scalar('Train/mean_reward', mean_reward, log_dict['it'])
             self.writer.add_scalar('Train/mean_episode_length', mean_episode_length, log_dict['it'])
             self.writer.add_scalar('Train/mean_reward/time', mean_reward, self.tot_time)
-            self.writer.add_scalar('Train/mean_episode_length/time', mean_episode_length, self.tot_time)
             wandb_metrics['Train/mean_reward'] = float(mean_reward)
             wandb_metrics['Train/mean_episode_length'] = float(mean_episode_length)
-            wandb_metrics['Train/mean_reward_time'] = float(mean_reward)
-            wandb_metrics['Train/mean_episode_length_time'] = float(mean_episode_length)
         for key in self.keys:
             if len(self.rewbuffer_decoupled[key]) > 0:
                 mean_reward = statistics.mean(self.rewbuffer_decoupled[key])
                 self.writer.add_scalar(f'Train/mean_reward_{key}', mean_reward, log_dict['it'])
                 self.writer.add_scalar(f'Train/mean_reward_{key}/time', mean_reward, self.tot_time)
                 wandb_metrics[f'Train/mean_reward_{key}'] = float(mean_reward)
-                wandb_metrics[f'Train/mean_reward_{key}_time'] = float(mean_reward)
 
+        env_log_dict.pop('Env/average_episode_length', None)
         if len(env_log_dict) > 0:
             for k, v in env_log_dict.items():
                 self.writer.add_scalar(k, v, log_dict['it'])

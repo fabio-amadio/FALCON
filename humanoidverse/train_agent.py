@@ -100,7 +100,7 @@ def main(config: OmegaConf):
         try:
             wandb.init(**init_kwargs)
             wandb.define_metric("trainer/learning_iteration")
-            for prefix in ["Loss/*", "Policy/*", "Perf/*", "Train/*", "Env/*", "Episode/*", "trainer/*"]:
+            for prefix in ["Loss/*", "Policy/*", "Perf/*", "Train/*", "Env/*", "Episode/*"]:
                 wandb.define_metric(prefix, step_metric="trainer/learning_iteration")
         except Exception as exc:
             logger.exception(f"W&B init failed, continuing without W&B logging. Error: {exc}")
