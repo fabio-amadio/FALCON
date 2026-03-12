@@ -16,6 +16,15 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPoses(LeggedRobotDecouple
     def __init__(self, config, device):
         self.init_done = False
         super().__init__(config, device)
+        # Recreate with final extend-body count (set in _init_motion_extend after BaseTask init).
+        self.ref_body_rot_extend = torch.zeros(
+            self.num_envs,
+            self.num_bodies + self.num_extend_bodies,
+            4,
+            dtype=torch.float32,
+            device=self.device,
+            requires_grad=False,
+        )
         self.command_height_scale = torch.zeros(self.num_envs, 1, dtype=torch.float, device=self.device)
 
     def _init_tracking_config(self):
@@ -49,7 +58,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHandPoses(LeggedRobotDecouple
         self.motion_len = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device, requires_grad=False)
         self.ref_upper_dof_pos = torch.zeros(self.num_envs, self.config.robot.upper_body_actions_dim, \
                                                dtype=torch.float32, device=self.device, requires_grad=False)
-        self.ref_body_rot_extend = torch.zeros(self.num_envs, self.num_bodies + self.num_extend_bodies, 4, dtype=torch.float32, device=self.device, requires_grad=False)
+        num_extend_bodies = getattr(self, "num_extend_bodies", 0)
+        self.ref_body_rot_extend = torch.zeros(self.num_envs, self.num_bodies + num_extend_bodies, 4, dtype=torch.float32, device=self.device, requires_grad=False)
         self.command_hand_pose_local = torch.zeros(self.num_envs, 14, dtype=torch.float32, device=self.device, requires_grad=False)
         self.fixed_hand_pose_local_template = torch.zeros(14, dtype=torch.float32, device=self.device, requires_grad=False)
         self.fixed_hand_pose_initialized = False

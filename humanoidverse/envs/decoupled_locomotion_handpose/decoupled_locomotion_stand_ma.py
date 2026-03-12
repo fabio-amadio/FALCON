@@ -19,6 +19,8 @@ DEBUG = False
 class LeggedRobotDecoupledLocomotionStance(LeggedRobotLocomotion):
     def __init__(self, config, device):
         self.init_done = False
+        # Needed because BaseTask.__init__ calls self._init_buffers() before _init_motion_extend().
+        self.num_extend_bodies = 0
         super().__init__(config, device)
         self._motion_lib = None
         self._init_motion_lib()
