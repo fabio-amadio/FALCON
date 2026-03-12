@@ -19,6 +19,10 @@ from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.live import Live
+try:
+    import wandb
+except Exception:
+    wandb = None
 console = Console()
 
 class PPO(BaseAlgo):
@@ -532,23 +536,54 @@ class PPO(BaseAlgo):
             pass
 
     def _logging_to_writer(self, log_dict, train_log_dict, env_log_dict):
+        wandb_metrics = {"trainer/learning_iteration": log_dict["it"]}
         # Logging Loss Dict
         for loss_key, loss_value in log_dict['loss_dict'].items():
             self.writer.add_scalar(f'Loss/{loss_key}', loss_value, log_dict['it'])
+            wandb_metrics[f'Loss/{loss_key}'] = float(loss_value)
         self.writer.add_scalar('Loss/actor_learning_rate', self.actor_learning_rate, log_dict['it'])
         self.writer.add_scalar('Loss/critic_learning_rate', self.critic_learning_rate, log_dict['it'])
         self.writer.add_scalar('Policy/mean_noise_std', train_log_dict['mean_std'], log_dict['it'])
         self.writer.add_scalar('Perf/total_fps', train_log_dict['fps'], log_dict['it'])
         self.writer.add_scalar('Perf/collection time', log_dict['collection_time'], log_dict['it'])
         self.writer.add_scalar('Perf/learning_time', log_dict['learn_time'], log_dict['it'])
+        wandb_metrics['Loss/actor_learning_rate'] = float(self.actor_learning_rate)
+        wandb_metrics['Loss/critic_learning_rate'] = float(self.critic_learning_rate)
+        wandb_metrics['Policy/mean_noise_std'] = float(train_log_dict['mean_std'])
+        wandb_metrics['Perf/total_fps'] = float(train_log_dict['fps'])
+        wandb_metrics['Perf/collection_time'] = float(log_dict['collection_time'])
+        wandb_metrics['Perf/learning_time'] = float(log_dict['learn_time'])
         if len(log_dict['rewbuffer']) > 0:
-            self.writer.add_scalar('Train/mean_reward', statistics.mean(log_dict['rewbuffer']), log_dict['it'])
-            self.writer.add_scalar('Train/mean_episode_length', statistics.mean(log_dict['lenbuffer']), log_dict['it'])
-            self.writer.add_scalar('Train/mean_reward/time', statistics.mean(log_dict['rewbuffer']), self.tot_time)
-            self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(log_dict['lenbuffer']), self.tot_time)
+            mean_reward = statistics.mean(log_dict['rewbuffer'])
+            mean_episode_length = statistics.mean(log_dict['lenbuffer'])
+            self.writer.add_scalar('Train/mean_reward', mean_reward, log_dict['it'])
+            self.writer.add_scalar('Train/mean_episode_length', mean_episode_length, log_dict['it'])
+            self.writer.add_scalar('Train/mean_reward/time', mean_reward, self.tot_time)
+            self.writer.add_scalar('Train/mean_episode_length/time', mean_episode_length, self.tot_time)
+            wandb_metrics['Train/mean_reward'] = float(mean_reward)
+            wandb_metrics['Train/mean_episode_length'] = float(mean_episode_length)
+            wandb_metrics['Train/mean_reward_time'] = float(mean_reward)
+            wandb_metrics['Train/mean_episode_length_time'] = float(mean_episode_length)
         if len(env_log_dict) > 0:
             for k, v in env_log_dict.items():
                 self.writer.add_scalar(k, v, log_dict['it'])
+                wandb_metrics[k] = self._to_scalar(v)
+        self._log_to_wandb(wandb_metrics, log_dict["it"])
+
+    def _to_scalar(self, value):
+        if isinstance(value, torch.Tensor):
+            if value.numel() == 1:
+                return float(value.item())
+            return float(value.float().mean().item())
+        return float(value)
+
+    def _log_to_wandb(self, metrics, step):
+        if wandb is None or wandb.run is None:
+            return
+        try:
+            wandb.log(metrics, step=step)
+        except Exception as exc:
+            logger.warning(f"W&B logging failed at step {step}: {exc}")
 
     ##########################################################################################
     # Code for Evaluation

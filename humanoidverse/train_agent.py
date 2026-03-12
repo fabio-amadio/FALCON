@@ -62,21 +62,48 @@ def main(config: OmegaConf):
     os.chdir(hydra.utils.get_original_cwd())
 
     if config.use_wandb:
-        project_name = f"{config.project_name}"
+        project_name = config.wandb.get("wandb_project", None) or f"{config.project_name}"
         run_name = f"{config.timestamp}_{config.experiment_name}_{config.log_task_name}_{config.robot.asset.robot_type}"
         wandb_dir = Path(config.wandb.wandb_dir)
         wandb_dir.mkdir(exist_ok=True, parents=True)
         logger.info(f"Saving wandb logs to {wandb_dir}")
+        legacy_tags = config.wandb.get("wandb_tags", [])
+        mode = config.wandb.get("wandb_mode", None)
+        if mode is None and isinstance(legacy_tags, str) and legacy_tags in {"online", "offline", "disabled"}:
+            mode = legacy_tags
+            legacy_tags = []
+        if mode is None:
+            mode = "online"
         init_kwargs = dict(
             project=project_name,
             name=run_name,
-            sync_tensorboard=True,
+            sync_tensorboard=config.wandb.get("sync_tensorboard", False),
             config=unresolved_conf,
             dir=wandb_dir,
+            mode=mode,
+            settings=wandb.Settings(start_method="thread"),
         )
+        if isinstance(legacy_tags, str):
+            if legacy_tags:
+                init_kwargs["tags"] = [legacy_tags]
+        else:
+            tags = list(legacy_tags)
+            if len(tags) > 0:
+                init_kwargs["tags"] = tags
         if config.wandb.wandb_entity:
             init_kwargs["entity"] = config.wandb.wandb_entity
-        wandb.init(**init_kwargs)
+        if config.wandb.wandb_group:
+            init_kwargs["group"] = config.wandb.wandb_group
+        if config.wandb.wandb_id:
+            init_kwargs["id"] = config.wandb.wandb_id
+            init_kwargs["resume"] = "allow"
+        try:
+            wandb.init(**init_kwargs)
+            wandb.define_metric("trainer/learning_iteration")
+            for prefix in ["Loss/*", "Policy/*", "Perf/*", "Train/*", "Env/*", "Episode/*", "trainer/*"]:
+                wandb.define_metric(prefix, step_metric="trainer/learning_iteration")
+        except Exception as exc:
+            logger.exception(f"W&B init failed, continuing without W&B logging. Error: {exc}")
     
     if hasattr(config, 'device'):
         if config.device is not None:
@@ -114,6 +141,9 @@ def main(config: OmegaConf):
 
     # handle saving config
     algo.learn()
+
+    if config.use_wandb and wandb.run is not None:
+        wandb.finish()
 
     if simulator_type == 'IsaacSim':
         simulation_app.close()

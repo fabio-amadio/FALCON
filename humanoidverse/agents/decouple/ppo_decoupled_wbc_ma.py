@@ -501,9 +501,11 @@ class PPOMultiActorCritic(PPO):
             pass
     
     def _logging_to_writer(self, log_dict, train_log_dict, env_log_dict):
+        wandb_metrics = {"trainer/learning_iteration": log_dict["it"]}
         # Logging Loss Dict
         for loss_key, loss_value in log_dict['loss_dict'].items():
             self.writer.add_scalar(f'Loss/{loss_key}', loss_value, log_dict['it'])
+            wandb_metrics[f'Loss/{loss_key}'] = float(loss_value)
         # self.writer.add_scalar('Loss/actor_learning_rate', self.actor_learning_rate, log_dict['it'])
         # self.writer.add_scalar('Loss/critic_learning_rate', self.critic_learning_rate, log_dict['it'])
         # self.writer.add_scalar('Policy/mean_noise_std', train_log_dict['mean_std'], log_dict['it'])
@@ -511,38 +513,65 @@ class PPOMultiActorCritic(PPO):
             self.writer.add_scalar(f'Loss/actor_learning_rate_{key}', self.actor_learning_rates[key], log_dict['it'])
             self.writer.add_scalar(f'Loss/critic_learning_rate_{key}', self.critic_learning_rates[key], log_dict['it'])
             self.writer.add_scalar(f'Policy/mean_noise_std_{key}', train_log_dict['mean_std'][key], log_dict['it'])
+            wandb_metrics[f'Loss/actor_learning_rate_{key}'] = float(self.actor_learning_rates[key])
+            wandb_metrics[f'Loss/critic_learning_rate_{key}'] = float(self.critic_learning_rates[key])
+            wandb_metrics[f'Policy/mean_noise_std_{key}'] = float(train_log_dict['mean_std'][key])
             if self.config.get('log_all_action_std', False):
                 for i, std_val in enumerate(self.actors[key].std.tolist()):
                     self.writer.add_scalar(f'Policy/action_std_{key}/dim_{i}', std_val, log_dict['it'])
+                    wandb_metrics[f'Policy/action_std_{key}/dim_{i}'] = float(std_val)
             # Log min std dim and value
             self.writer.add_scalar(f'Policy/min_noise_std_val_{key}', self.actors[key].std.min().item(), log_dict['it'])
             self.writer.add_scalar(f'Policy/min_noise_std_dim_{key}', torch.argmin(self.actors[key].std).item(), log_dict['it'])
+            wandb_metrics[f'Policy/min_noise_std_val_{key}'] = float(self.actors[key].std.min().item())
+            wandb_metrics[f'Policy/min_noise_std_dim_{key}'] = float(torch.argmin(self.actors[key].std).item())
 
         self.writer.add_scalar('Perf/total_fps', train_log_dict['fps'], log_dict['it'])
         self.writer.add_scalar('Perf/collection time', log_dict['collection_time'], log_dict['it'])
         self.writer.add_scalar('Perf/learning_time', log_dict['learn_time'], log_dict['it'])
+        wandb_metrics['Perf/total_fps'] = float(train_log_dict['fps'])
+        wandb_metrics['Perf/collection_time'] = float(log_dict['collection_time'])
+        wandb_metrics['Perf/learning_time'] = float(log_dict['learn_time'])
         if len(log_dict['rewbuffer']) > 0:
-            self.writer.add_scalar('Train/mean_reward', statistics.mean(log_dict['rewbuffer']), log_dict['it'])
-            self.writer.add_scalar('Train/mean_episode_length', statistics.mean(log_dict['lenbuffer']), log_dict['it'])
-            self.writer.add_scalar('Train/mean_reward/time', statistics.mean(log_dict['rewbuffer']), self.tot_time)
-            self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(log_dict['lenbuffer']), self.tot_time)
+            mean_reward = statistics.mean(log_dict['rewbuffer'])
+            mean_episode_length = statistics.mean(log_dict['lenbuffer'])
+            self.writer.add_scalar('Train/mean_reward', mean_reward, log_dict['it'])
+            self.writer.add_scalar('Train/mean_episode_length', mean_episode_length, log_dict['it'])
+            self.writer.add_scalar('Train/mean_reward/time', mean_reward, self.tot_time)
+            self.writer.add_scalar('Train/mean_episode_length/time', mean_episode_length, self.tot_time)
+            wandb_metrics['Train/mean_reward'] = float(mean_reward)
+            wandb_metrics['Train/mean_episode_length'] = float(mean_episode_length)
+            wandb_metrics['Train/mean_reward_time'] = float(mean_reward)
+            wandb_metrics['Train/mean_episode_length_time'] = float(mean_episode_length)
         for key in self.keys:
             if len(self.rewbuffer_decoupled[key]) > 0:
                 mean_reward = statistics.mean(self.rewbuffer_decoupled[key])
                 self.writer.add_scalar(f'Train/mean_reward_{key}', mean_reward, log_dict['it'])
                 self.writer.add_scalar(f'Train/mean_reward_{key}/time', mean_reward, self.tot_time)
+                wandb_metrics[f'Train/mean_reward_{key}'] = float(mean_reward)
+                wandb_metrics[f'Train/mean_reward_{key}_time'] = float(mean_reward)
 
         if len(env_log_dict) > 0:
             for k, v in env_log_dict.items():
                 self.writer.add_scalar(k, v, log_dict['it'])
+                wandb_metrics[k] = self._to_scalar(v)
         if hasattr(self.env, 'action_scale_upper_body'):
-            self.writer.add_scalar('Env/action_scale_upper_body', torch.mean(self.env.action_scale_upper_body).item(), log_dict['it'])
+            action_scale_upper_body = torch.mean(self.env.action_scale_upper_body).item()
+            self.writer.add_scalar('Env/action_scale_upper_body', action_scale_upper_body, log_dict['it'])
+            wandb_metrics['Env/action_scale_upper_body'] = float(action_scale_upper_body)
         if hasattr(self.env, 'apply_force_scale'):
-            self.writer.add_scalar('Env/apply_force_scale', torch.mean(self.env.apply_force_scale).item(), log_dict['it'])
+            apply_force_scale = torch.mean(self.env.apply_force_scale).item()
+            self.writer.add_scalar('Env/apply_force_scale', apply_force_scale, log_dict['it'])
+            wandb_metrics['Env/apply_force_scale'] = float(apply_force_scale)
         if hasattr(self.env, 'command_height_scale'):
-            self.writer.add_scalar('Env/command_height_scale', torch.mean(self.env.command_height_scale).item(), log_dict['it'])
+            command_height_scale = torch.mean(self.env.command_height_scale).item()
+            self.writer.add_scalar('Env/command_height_scale', command_height_scale, log_dict['it'])
+            wandb_metrics['Env/command_height_scale'] = float(command_height_scale)
         if hasattr(self.env, 'upper_body_tracking_sigma'):
-            self.writer.add_scalar('Env/upper_body_tracking_sigma', torch.mean(self.env.upper_body_tracking_sigma).item(), log_dict['it'])
+            upper_body_tracking_sigma = torch.mean(self.env.upper_body_tracking_sigma).item()
+            self.writer.add_scalar('Env/upper_body_tracking_sigma', upper_body_tracking_sigma, log_dict['it'])
+            wandb_metrics['Env/upper_body_tracking_sigma'] = float(upper_body_tracking_sigma)
+        self._log_to_wandb(wandb_metrics, log_dict["it"])
     
     @property
     def inference_model(self):

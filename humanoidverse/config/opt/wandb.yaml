@@ -4,7 +4,9 @@ use_wandb: True
 
 wandb:
   wandb_project: null
-  wandb_tags: 'online' # 'online' or 'offline' or 'disabled'
+  wandb_mode: 'online' # 'online' or 'offline' or 'disabled'
+  sync_tensorboard: False
+  wandb_tags: [] # optional list of tags
   wandb_group: null
   wandb_id: null
   wandb_entity: fabioamadio93-inria
