@@ -53,6 +53,18 @@ Install IsaacGym Python API:
 pip install -e isaacgym/python
 ```
 
+If `import isaacgym` fails with `libpython3.8.so.1.0` missing, add the conda lib path on env activation:
+```bash
+mkdir -p $CONDA_PREFIX/etc/conda/activate.d
+mkdir -p $CONDA_PREFIX/etc/conda/deactivate.d
+cat > $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh <<'EOF'
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+EOF
+cat > $CONDA_PREFIX/etc/conda/deactivate.d/env_vars.sh <<'EOF'
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH#"$CONDA_PREFIX/lib:"}"
+EOF
+```
+
 Test installation:
 
 ```bash

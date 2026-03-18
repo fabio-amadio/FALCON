@@ -430,6 +430,12 @@ class PPOMultiActorCritic(PPO):
         iteration_time = log_dict['collection_time'] + log_dict['learn_time']
 
         ep_string = f''
+        episode_log_dict = {}
+        reward_to_group = {}
+        for group_name, reward_names in self.rw_groups.items():
+            for reward_name in reward_names:
+                reward_to_group[reward_name] = group_name
+
         if log_dict['ep_infos']:
             for key in log_dict['ep_infos'][0]:
                 infotensor = torch.tensor([], device=self.device)
@@ -440,8 +446,17 @@ class PPOMultiActorCritic(PPO):
                     if len(ep_info[key].shape) == 0:
                         ep_info[key] = ep_info[key].unsqueeze(0)
                     infotensor = torch.cat((infotensor, ep_info[key].to(self.device)))
-                value = torch.mean(infotensor)
-                self.writer.add_scalar('Episode/' + key, value, log_dict['it'])
+                value = self._to_scalar(torch.mean(infotensor))
+
+                if key.startswith('rew_'):
+                    reward_name = key[4:]
+                    reward_group = reward_to_group.get(reward_name, "ungrouped")
+                    metric_name = f"Episode/rew/{reward_group}/{reward_name}"
+                else:
+                    metric_name = 'Episode/' + key
+
+                self.writer.add_scalar(metric_name, value, log_dict['it'])
+                episode_log_dict[metric_name] = value
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
 
         train_log_dict = {}
@@ -455,7 +470,7 @@ class PPOMultiActorCritic(PPO):
         env_log_dict = self.episode_env_tensors.mean_and_clear()
         env_log_dict = {f"Env/{k}": v for k, v in env_log_dict.items()}
 
-        self._logging_to_writer(log_dict, train_log_dict, env_log_dict)
+        self._logging_to_writer(log_dict, train_log_dict, env_log_dict, episode_log_dict)
 
         str = f" \033[1m Learning iteration {log_dict['it']}/{self.current_learning_iteration + log_dict['num_learning_iterations']} \033[0m "
 
@@ -500,7 +515,7 @@ class PPOMultiActorCritic(PPO):
             # Your training loop or other operations
             pass
     
-    def _logging_to_writer(self, log_dict, train_log_dict, env_log_dict):
+    def _logging_to_writer(self, log_dict, train_log_dict, env_log_dict, episode_log_dict=None):
         wandb_metrics = {"trainer/learning_iteration": log_dict["it"]}
         # Logging Loss Dict
         for loss_key, loss_value in log_dict['loss_dict'].items():
@@ -516,10 +531,6 @@ class PPOMultiActorCritic(PPO):
             wandb_metrics[f'Loss/actor_learning_rate_{key}'] = float(self.actor_learning_rates[key])
             wandb_metrics[f'Loss/critic_learning_rate_{key}'] = float(self.critic_learning_rates[key])
             wandb_metrics[f'Policy/mean_noise_std_{key}'] = float(train_log_dict['mean_std'][key])
-            if self.config.get('log_all_action_std', False):
-                for i, std_val in enumerate(self.actors[key].std.tolist()):
-                    self.writer.add_scalar(f'Policy/action_std_{key}/dim_{i}', std_val, log_dict['it'])
-                    wandb_metrics[f'Policy/action_std_{key}/dim_{i}'] = float(std_val)
             # Log min std dim and value
             self.writer.add_scalar(f'Policy/min_noise_std_val_{key}', self.actors[key].std.min().item(), log_dict['it'])
             self.writer.add_scalar(f'Policy/min_noise_std_dim_{key}', torch.argmin(self.actors[key].std).item(), log_dict['it'])
@@ -538,19 +549,16 @@ class PPOMultiActorCritic(PPO):
             self.writer.add_scalar('Train/mean_reward', mean_reward, log_dict['it'])
             self.writer.add_scalar('Train/mean_episode_length', mean_episode_length, log_dict['it'])
             self.writer.add_scalar('Train/mean_reward/time', mean_reward, self.tot_time)
-            self.writer.add_scalar('Train/mean_episode_length/time', mean_episode_length, self.tot_time)
             wandb_metrics['Train/mean_reward'] = float(mean_reward)
             wandb_metrics['Train/mean_episode_length'] = float(mean_episode_length)
-            wandb_metrics['Train/mean_reward_time'] = float(mean_reward)
-            wandb_metrics['Train/mean_episode_length_time'] = float(mean_episode_length)
         for key in self.keys:
             if len(self.rewbuffer_decoupled[key]) > 0:
                 mean_reward = statistics.mean(self.rewbuffer_decoupled[key])
                 self.writer.add_scalar(f'Train/mean_reward_{key}', mean_reward, log_dict['it'])
                 self.writer.add_scalar(f'Train/mean_reward_{key}/time', mean_reward, self.tot_time)
                 wandb_metrics[f'Train/mean_reward_{key}'] = float(mean_reward)
-                wandb_metrics[f'Train/mean_reward_{key}_time'] = float(mean_reward)
 
+        env_log_dict.pop('Env/average_episode_length', None)
         if len(env_log_dict) > 0:
             for k, v in env_log_dict.items():
                 self.writer.add_scalar(k, v, log_dict['it'])
@@ -571,6 +579,9 @@ class PPOMultiActorCritic(PPO):
             upper_body_tracking_sigma = torch.mean(self.env.upper_body_tracking_sigma).item()
             self.writer.add_scalar('Env/upper_body_tracking_sigma', upper_body_tracking_sigma, log_dict['it'])
             wandb_metrics['Env/upper_body_tracking_sigma'] = float(upper_body_tracking_sigma)
+        if episode_log_dict:
+            for k, v in episode_log_dict.items():
+                wandb_metrics[k] = float(v)
         self._log_to_wandb(wandb_metrics, log_dict["it"])
     
     @property
