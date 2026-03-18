@@ -260,3 +260,26 @@ Other work also using FALCON's dual-agent framework:
 # License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+# Utils
+Train with no residual actions:
+
+```bash
+python humanoidverse/train_agent.py \
++exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_no_residual_ma_ppo_ma_env \
++simulator=isaacgym \
++domain_rand=domain_rand_rl_gym \
++rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force \
++robot=g1/g1_29dof_waist_fakehand \
++terrain=terrain_locomotion_plane \
++obs=dec_loco/g1_29dof_obs_diff_force_history_wolinvel_ma \
+num_envs=4096 \
+project_name=g1_29dof_falcon \
+experiment_name=g1_29dof_falcon_no_residual \
++opt=wandb \
+obs.add_noise=True \
+env.config.fix_upper_body_prob=0.3 \
+robot.dof_effort_limit_scale=0.9 \
+rewards.reward_initial_penalty_scale=0.1 \
+rewards.reward_penalty_degree=0.0001
+```
