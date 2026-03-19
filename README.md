@@ -301,3 +301,16 @@ robot.dof_effort_limit_scale=0.9 \
 rewards.reward_initial_penalty_scale=0.1 \
 rewards.reward_penalty_degree=0.0001
 ```
+
+Evaluate the policy with locomotion commands:
+
+```bash
+python humanoidverse/eval_agent.py \
+  +checkpoint=<path_to_your_ckpt> \
+  ++env.config.analysis=True \
+  ++env.config.resample_commands_in_eval=True \
+  ++env.config.stand_prob=0.0 \
+  '++env.config.locomotion_command_ranges.lin_vel_x=[0.4,1.0]' \
+  '++env.config.locomotion_command_ranges.lin_vel_y=[-0.2,0.2]' \
+  '++env.config.locomotion_command_ranges.heading=[1.0,1.0]'
+```
