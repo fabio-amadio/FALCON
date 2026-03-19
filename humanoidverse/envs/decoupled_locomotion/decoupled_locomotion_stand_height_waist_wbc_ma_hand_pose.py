@@ -24,10 +24,9 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.right_palm_link = "right_palm_link"
         self.left_palm_link_index = self.simulator._body_list.index(self.left_palm_link)
         self.right_palm_link_index = self.simulator._body_list.index(self.right_palm_link)
+        self._init_hand_pose_buffers()
 
-    def _init_buffers(self):
-        super()._init_buffers()
-
+    def _init_hand_pose_buffers(self):
         total_bodies = self.num_bodies + self.num_extend_bodies
         self.extend_curr_rot = torch.zeros(
             self.num_envs, self.num_extend_bodies, 4, dtype=torch.float32, device=self.device
