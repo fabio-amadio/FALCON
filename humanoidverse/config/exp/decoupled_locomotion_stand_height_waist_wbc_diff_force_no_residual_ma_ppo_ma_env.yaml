@@ -3,5 +3,6 @@
 defaults:
   - /algo: ppo_decoupled_wbc_ma
   - /env: decoupled_locomotion_stand_height_waist_wbc_ma_diff_force_no_residual
+  - /rewards: dec_loco/reward_dec_loco_stand_height_ma_diff_force_no_residual_sigma02
 
-experiment_name: TEST_DecoupledLocomotionNoResidual
+experiment_name: TEST_DecoupledLocomotionNoResidualSigma02
