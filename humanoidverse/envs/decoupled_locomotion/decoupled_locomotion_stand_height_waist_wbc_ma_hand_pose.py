@@ -5,7 +5,7 @@ import torch
 from humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_waist_wbc_ma_diff_force import (
     LeggedRobotDecoupledLocomotionStanceHeightWBCForce,
 )
-from humanoidverse.utils.torch_utils import quat_conjugate, quat_mul, quat_unit
+from humanoidverse.utils.torch_utils import quat_conjugate, quat_mul
 
 from isaac_utils.rotations import my_quat_rotate, quaternion_to_matrix
 
@@ -55,6 +55,11 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.curr_left_palm_pos = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
         self.curr_right_palm_pos = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
 
+        self.ref_left_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
+        self.ref_right_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
+        self.curr_left_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
+        self.curr_right_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
+
         self.ref_left_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
         self.ref_right_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
         self.curr_left_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
@@ -94,6 +99,13 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         world_rot = self._safe_normalize_quat_xyzw(quat_mul(parent_rot_xyzw, palm_rot_in_parent_xyzw))
         return world_pos, world_rot
 
+    def _quat_angle_error(self, quat_a_xyzw, quat_b_xyzw):
+        quat_a_xyzw = self._safe_normalize_quat_xyzw(quat_a_xyzw)
+        quat_b_xyzw = self._safe_normalize_quat_xyzw(quat_b_xyzw)
+        quat_rel = self._safe_normalize_quat_xyzw(quat_mul(quat_conjugate(quat_a_xyzw), quat_b_xyzw))
+        quat_rel_w = quat_rel[..., 3].abs().clamp(max=1.0)
+        return 2.0 * torch.acos(quat_rel_w)
+
     def _update_palm_pose_buffers(self):
         curr_left_parent_pos = self.simulator._rigid_body_pos[:, self.left_palm_parent_index, :]
         curr_right_parent_pos = self.simulator._rigid_body_pos[:, self.right_palm_parent_index, :]
@@ -103,6 +115,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         if self.config.rewards.fix_upper_body:
             self.ref_left_palm_pos.zero_()
             self.ref_right_palm_pos.zero_()
+            self.ref_left_palm_rot_xyzw.zero_()
+            self.ref_right_palm_rot_xyzw.zero_()
             self.ref_left_palm_rot_6d.zero_()
             self.ref_right_palm_rot_6d.zero_()
         else:
@@ -133,6 +147,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
             self.ref_right_palm_pos[:], ref_right_rot_base = self._world_pose_to_base_frame(
                 ref_right_world_pos, ref_right_world_rot
             )
+            self.ref_left_palm_rot_xyzw[:] = ref_left_rot_base
+            self.ref_right_palm_rot_xyzw[:] = ref_right_rot_base
             self.ref_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(ref_left_rot_base)
             self.ref_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(ref_right_rot_base)
 
@@ -155,6 +171,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.curr_right_palm_pos[:], curr_right_rot_base = self._world_pose_to_base_frame(
             curr_right_world_pos, curr_right_world_rot
         )
+        self.curr_left_palm_rot_xyzw[:] = curr_left_rot_base
+        self.curr_right_palm_rot_xyzw[:] = curr_right_rot_base
         self.curr_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_left_rot_base)
         self.curr_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_right_rot_base)
 
@@ -174,8 +192,9 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         if self.config.rewards.fix_upper_body:
             return torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
-        palm_rot_error = torch.sum(torch.square(self.curr_left_palm_rot_6d - self.ref_left_palm_rot_6d), dim=1)
-        palm_rot_error += torch.sum(torch.square(self.curr_right_palm_rot_6d - self.ref_right_palm_rot_6d), dim=1)
+        left_rot_error = self._quat_angle_error(self.curr_left_palm_rot_xyzw, self.ref_left_palm_rot_xyzw)
+        right_rot_error = self._quat_angle_error(self.curr_right_palm_rot_xyzw, self.ref_right_palm_rot_xyzw)
+        palm_rot_error = torch.square(left_rot_error) + torch.square(right_rot_error)
         return torch.exp(-palm_rot_error / self.config.rewards.reward_tracking_sigma.palm_rot)
 
     def _get_obs_ref_left_palm_pos(self):
