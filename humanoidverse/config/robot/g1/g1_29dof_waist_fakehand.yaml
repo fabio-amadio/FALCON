@@ -1,7 +1,8 @@
 # @package _global_
 
 defaults:
-  - robot_base
+  - /robot/robot_base@_here_
+  - _self_
 
 robot:
   # Observation parameters
