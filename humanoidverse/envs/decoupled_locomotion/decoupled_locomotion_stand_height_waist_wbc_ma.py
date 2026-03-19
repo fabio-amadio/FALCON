@@ -337,7 +337,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBC(LeggedRobotDecoupledLocomoti
         super()._update_timeout_buf()
         if self.config.termination.terminate_when_motion_end:
             current_time = (self.episode_length_buf) * self.dt + self.motion_start_times
-            self.time_out_buf |= current_time > self.motion_len
+            self.term_motion_end_buf[:] = current_time > self.motion_len
+            self.time_out_buf |= self.term_motion_end_buf
+        else:
+            self.term_motion_end_buf[:] = False
         # print("time_out_buf: ", self.time_out_buf)
         self.reset_buf |= self.time_out_buf
     
@@ -360,6 +363,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBC(LeggedRobotDecoupledLocomoti
         if len(env_ids) == 0:
             return
         self.need_to_refresh_envs[env_ids] = True
+        self.extras["episode"] = {}
+        self._add_episode_termination_metrics(env_ids)
         # avoid updating command curriculum at each step since the maximum command is common to all envs
         # if self.config.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
         #     self.update_command_curriculum(env_ids)
@@ -376,7 +381,6 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBC(LeggedRobotDecoupledLocomoti
         self._reset_robot_states_callback(env_ids, target_states)
 
         # fill extras
-        self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.

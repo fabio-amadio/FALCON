@@ -462,6 +462,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForce(LeggedRobotDecoupledLoc
         if len(env_ids) == 0:
             return
         self.need_to_refresh_envs[env_ids] = True
+        self.extras["episode"] = {}
+        self._add_episode_termination_metrics(env_ids)
         # avoid updating command curriculum at each step since the maximum command is common to all envs
         # if self.config.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
         #     self.update_command_curriculum(env_ids)
@@ -489,7 +491,6 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForce(LeggedRobotDecoupledLoc
         self.filtered_right_force_min[env_ids] *= 0.0
 
         # fill extras
-        self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.

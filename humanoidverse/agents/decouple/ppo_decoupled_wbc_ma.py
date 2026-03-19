@@ -452,6 +452,8 @@ class PPOMultiActorCritic(PPO):
                     reward_name = key[4:]
                     reward_group = reward_to_group.get(reward_name, "ungrouped")
                     metric_name = f"Episode/rew/{reward_group}/{reward_name}"
+                elif key.startswith('termination/'):
+                    metric_name = 'Termination/' + key[len('termination/'):]
                 else:
                     metric_name = 'Episode/' + key
 
