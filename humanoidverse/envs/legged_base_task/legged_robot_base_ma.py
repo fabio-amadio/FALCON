@@ -92,14 +92,6 @@ class LeggedRobotBase(BaseTask):
         self.num_compute_average_epl = self.config.rewards.num_compute_average_epl
 
         self.need_to_refresh_envs = torch.ones(self.num_envs, dtype=torch.bool, device=self.device, requires_grad=False)
-        self.term_contact_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_gravity_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_low_height_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_dof_pos_limit_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_dof_vel_limit_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_torque_limit_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_time_out_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
-        self.term_motion_end_buf = torch.zeros(self.num_envs, device=self.device, dtype=torch.bool, requires_grad=False)
 
     def _domain_rand_config(self):
         if self.config.domain_rand.push_robots:
@@ -336,38 +328,15 @@ class LeggedRobotBase(BaseTask):
         self.reset_buf |= self.time_out_buf
 
     def _update_reset_buf(self):
-        self.term_contact_buf[:] = False
-        self.term_gravity_buf[:] = False
-        self.term_low_height_buf[:] = False
-        self.term_dof_pos_limit_buf[:] = False
-        self.term_dof_vel_limit_buf[:] = False
-        self.term_torque_limit_buf[:] = False
-
         if self.config.termination.terminate_by_contact:
-            self.term_contact_buf[:] = torch.any(
-                torch.norm(self.simulator.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1.,
-                dim=1,
-            )
-            self.reset_buf |= self.term_contact_buf
+            self.reset_buf |= torch.any(torch.norm(self.simulator.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
 
         if self.config.termination.terminate_by_gravity:
             # print(self.projected_gravity)
-            gravity_x = torch.any(
-                torch.abs(self.projected_gravity[:, 0:1]) > self.config.termination_scales.termination_gravity_x,
-                dim=1,
-            )
-            gravity_y = torch.any(
-                torch.abs(self.projected_gravity[:, 1:2]) > self.config.termination_scales.termination_gravity_y,
-                dim=1,
-            )
-            self.term_gravity_buf[:] = gravity_x | gravity_y
-            self.reset_buf |= self.term_gravity_buf
+            self.reset_buf |= torch.any(torch.abs(self.projected_gravity[:, 0:1]) > self.config.termination_scales.termination_gravity_x, dim=1)
+            self.reset_buf |= torch.any(torch.abs(self.projected_gravity[:, 1:2]) > self.config.termination_scales.termination_gravity_y, dim=1)
         if self.config.termination.terminate_by_low_height:
-            self.term_low_height_buf[:] = torch.any(
-                self.simulator.robot_root_states[:, 2:3] < self.config.termination_scales.termination_min_base_height,
-                dim=1,
-            )
-            self.reset_buf |= self.term_low_height_buf
+            self.reset_buf |= torch.any(self.simulator.robot_root_states[:, 2:3] < self.config.termination_scales.termination_min_base_height, dim=1)
 
         if self.config.termination.terminate_when_close_to_dof_pos_limit:
             out_of_dof_pos_limits = -(self.simulator.dof_pos - self.simulator.dof_pos_limits_termination[:, 0]).clip(max=0.) # lower limit
@@ -375,67 +344,26 @@ class LeggedRobotBase(BaseTask):
             
             out_of_dof_pos_limits = torch.sum(out_of_dof_pos_limits, dim=1)
             # get random number between 0 and 1, if it is smaller than self.config.termination_probality.terminate_when_close_to_dof_pos_limit, apply the termination
-            if torch.rand(1, device=self.device) < self.config.termination_probality.terminate_when_close_to_dof_pos_limit:
-                self.term_dof_pos_limit_buf[:] = out_of_dof_pos_limits > 0.
-                self.reset_buf |= self.term_dof_pos_limit_buf
+            if torch.rand(1) < self.config.termination_probality.terminate_when_close_to_dof_pos_limit:
+                self.reset_buf |= out_of_dof_pos_limits > 0.
         
         if self.config.termination.terminate_when_close_to_dof_vel_limit:
             out_of_dof_vel_limits = torch.sum((torch.abs(self.simulator.dof_vel) - self.dof_vel_limits * self.config.termination_scales.termination_close_to_dof_vel_limit).clip(min=0., max=1.), dim=1)
             
             
 
-            if torch.rand(1, device=self.device) < self.config.termination_probality.terminate_when_close_to_dof_vel_limit:
-                self.term_dof_vel_limit_buf[:] = out_of_dof_vel_limits > 0.
-                self.reset_buf |= self.term_dof_vel_limit_buf
+            if torch.rand(1) < self.config.termination_probality.terminate_when_close_to_dof_vel_limit:
+                self.reset_buf |= out_of_dof_vel_limits > 0.
         
         if self.config.termination.terminate_when_close_to_torque_limit:
             out_of_torque_limits = torch.sum((torch.abs(self.torques) - self.torque_limits * self.config.termination_scales.termination_close_to_torque_limit).clip(min=0., max=1.), dim=1)
             
-            if torch.rand(1, device=self.device) < self.config.termination_probality.terminate_when_close_to_torque_limit:
-                self.term_torque_limit_buf[:] = out_of_torque_limits > 0.
-                self.reset_buf |= self.term_torque_limit_buf
+            if torch.rand(1) < self.config.termination_probality.terminate_when_close_to_torque_limit:
+                self.reset_buf |= out_of_torque_limits > 0.
 
 
     def _update_timeout_buf(self):
-        self.term_time_out_buf[:] = self.episode_length_buf > self.max_episode_length
-        self.term_motion_end_buf[:] = False
-        self.time_out_buf |= self.term_time_out_buf # no terminal reward for time-outs
-
-    def _update_termination_log_dict(self):
-        zero_term = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
-        low_upper_tracking = zero_term
-        if hasattr(self, "far_upper_dof_pos_buf"):
-            low_upper_tracking = self.far_upper_dof_pos_buf.float()
-
-        self.log_dict["termination/any"] = self.reset_buf.float()
-        self.log_dict["termination/non_timeout"] = (self.reset_buf & ~self.time_out_buf).float()
-        self.log_dict["termination/time_out"] = self.term_time_out_buf.float()
-        self.log_dict["termination/motion_end"] = self.term_motion_end_buf.float()
-        self.log_dict["termination/contact"] = self.term_contact_buf.float()
-        self.log_dict["termination/gravity"] = self.term_gravity_buf.float()
-        self.log_dict["termination/low_height"] = self.term_low_height_buf.float()
-        self.log_dict["termination/dof_pos_limit"] = self.term_dof_pos_limit_buf.float()
-        self.log_dict["termination/dof_vel_limit"] = self.term_dof_vel_limit_buf.float()
-        self.log_dict["termination/torque_limit"] = self.term_torque_limit_buf.float()
-        self.log_dict["termination/low_upper_dof_tracking"] = low_upper_tracking
-
-    def _add_episode_termination_metrics(self, env_ids):
-        cause_metrics = {
-            "termination/non_timeout": (self.reset_buf[env_ids] & ~self.time_out_buf[env_ids]).float(),
-            "termination/time_out": self.term_time_out_buf[env_ids].float(),
-            "termination/motion_end": self.term_motion_end_buf[env_ids].float(),
-            "termination/contact": self.term_contact_buf[env_ids].float(),
-            "termination/gravity": self.term_gravity_buf[env_ids].float(),
-            "termination/low_height": self.term_low_height_buf[env_ids].float(),
-            "termination/dof_pos_limit": self.term_dof_pos_limit_buf[env_ids].float(),
-            "termination/dof_vel_limit": self.term_dof_vel_limit_buf[env_ids].float(),
-            "termination/torque_limit": self.term_torque_limit_buf[env_ids].float(),
-        }
-        if hasattr(self, "far_upper_dof_pos_buf"):
-            cause_metrics["termination/low_upper_dof_tracking"] = self.far_upper_dof_pos_buf[env_ids].float()
-
-        for key, value in cause_metrics.items():
-            self.extras["episode"][key] = torch.mean(value)
+        self.time_out_buf |= self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
 
     def reset_envs_idx(self, env_ids, target_states=None, target_buf=None):
         """ Reset some environments.
@@ -451,14 +379,13 @@ class LeggedRobotBase(BaseTask):
         if len(env_ids) == 0:
             return
         self.need_to_refresh_envs[env_ids] = True
-        self.extras["episode"] = {}
-        self._add_episode_termination_metrics(env_ids)
         
         self._reset_buffers_callback(env_ids, target_buf)
         self._reset_tasks_callback(env_ids)        # if target_states is not None, reset to target states
         self._reset_robot_states_callback(env_ids, target_states)
 
         # fill extras
+        self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.

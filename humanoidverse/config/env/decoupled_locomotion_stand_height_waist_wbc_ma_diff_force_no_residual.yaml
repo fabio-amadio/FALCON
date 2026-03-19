@@ -72,7 +72,7 @@ env:
       terminate_when_close_to_dof_vel_limit: False
       terminate_when_close_to_torque_limit: False
       terminate_when_motion_end: True
-      terminate_when_low_upper_dof_tracking: True
+      terminate_when_low_upper_dof_tracking: False
 
     termination_scales:
       termination_min_base_height: 0.3
@@ -81,7 +81,7 @@ env:
       termination_close_to_dof_pos_limit: 0.98
       termination_close_to_dof_vel_limit: 0.98
       termination_close_to_torque_limit: 0.98
-      terminate_when_low_upper_dof_tracking_threshold: 0.7
+      terminate_when_low_upper_dof_tracking_threshold: 0.1
 
 
 log_task_name: decoupled_locomotion
