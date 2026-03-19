@@ -37,6 +37,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBC(LeggedRobotDecoupledLocomoti
         self.commands = torch.zeros(
             (self.num_envs, 9), dtype=torch.float32, device=self.device
         )
+        self._latest_motion_res = None
         self.motion_times = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device, requires_grad=False)
         self.command_ranges = self.config.locomotion_command_ranges
         self.motion_ids = torch.arange(self.num_envs).to(self.device)
@@ -128,6 +129,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBC(LeggedRobotDecoupledLocomoti
         # print("self.base_ang_vel", self.base_ang_vel)
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
         if self.config.rewards.fix_upper_body:
+            self._latest_motion_res = None
             self.ref_upper_dof_pos *= 0.0
             return
         # Get the reference upper body joint positions
@@ -138,6 +140,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBC(LeggedRobotDecoupledLocomoti
         self.motion_times = ((self.episode_length_buf + 1) * self.dt + self.motion_start_times) * (1 - self.fix_upper_body) + \
                             self.fix_upper_body_motion_times * self.fix_upper_body
         motion_res = self._motion_lib.get_motion_state(self.motion_ids, self.motion_times, offset=offset)
+        self._latest_motion_res = motion_res
         
         # Update the upper body joint positions from motion library
         ref_joint_pos = motion_res["dof_pos"] # [num_envs, num_dofs]

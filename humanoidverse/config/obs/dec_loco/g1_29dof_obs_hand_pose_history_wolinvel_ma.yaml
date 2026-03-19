@@ -1,0 +1,80 @@
+# @package _global_
+
+defaults:
+  - g1_29dof_obs_diff_force_history_wolinvel_ma
+
+obs:
+  obs_dict:
+    actor_obs: [
+      base_ang_vel,
+      projected_gravity,
+      command_lin_vel,
+      command_ang_vel,
+      command_stand,
+      command_waist_dofs,
+      command_base_height,
+      ref_left_palm_pos,
+      ref_right_palm_pos,
+      ref_left_palm_rot_6d,
+      ref_right_palm_rot_6d,
+      dof_pos,
+      dof_vel,
+      actions,
+    ]
+
+    critic_obs: [
+      base_orientation,
+      base_lin_vel,
+      base_ang_vel,
+      projected_gravity,
+      command_lin_vel,
+      command_ang_vel,
+      command_stand,
+      command_waist_dofs,
+      command_base_height,
+      ref_left_palm_pos,
+      ref_right_palm_pos,
+      ref_left_palm_rot_6d,
+      ref_right_palm_rot_6d,
+      ref_upper_dof_pos,
+      dof_pos,
+      dof_vel,
+      actions,
+      left_ee_apply_force,
+      right_ee_apply_force,
+    ]
+
+  obs_scales:
+    ref_left_palm_pos: 1.0
+    ref_right_palm_pos: 1.0
+    ref_left_palm_rot_6d: 1.0
+    ref_right_palm_rot_6d: 1.0
+
+  noise_scales:
+    ref_left_palm_pos: 0.0
+    ref_right_palm_pos: 0.0
+    ref_left_palm_rot_6d: 0.0
+    ref_right_palm_rot_6d: 0.0
+
+  obs_dims:
+    - base_orientation: 4
+    - base_lin_vel: 3
+    - base_ang_vel: 3
+    - projected_gravity: 3
+    - command_lin_vel: 2
+    - command_ang_vel: 1
+    - command_stand: 1
+    - command_waist_dofs: 3
+    - command_base_height: 1
+    - ref_left_palm_pos: 3
+    - ref_right_palm_pos: 3
+    - ref_left_palm_rot_6d: 6
+    - ref_right_palm_rot_6d: 6
+    - ref_upper_dof_pos: ${robot.upper_body_actions_dim}
+    - dof_pos: ${robot.dof_obs_size}
+    - dof_vel: ${robot.dof_obs_size}
+    - actions: ${robot.dof_obs_size}
+    - sin_phase: 1
+    - cos_phase: 1
+    - left_ee_apply_force: 3
+    - right_ee_apply_force: 3

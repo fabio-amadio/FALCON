@@ -1,0 +1,69 @@
+# @package _global_
+
+defaults:
+  - g1_29dof_waist_fakehand
+
+robot:
+  motion:
+    nums_extend_bodies: 5
+    extend_config:
+      - joint_name: "left_hand_link"
+        parent_name: "left_wrist_yaw_link"
+        pos: [0.18, -0.025, 0.0]
+        rot: [1.0, 0.0, 0.0, 0.0]
+      - joint_name: "right_hand_link"
+        parent_name: "right_wrist_yaw_link"
+        pos: [0.18, 0.025, 0.0]
+        rot: [1.0, 0.0, 0.0, 0.0]
+      - joint_name: "head_link"
+        parent_name: "pelvis"
+        pos: [0.0, 0.0, 0.4]
+        rot: [1.0, 0.0, 0.0, 0.0]
+      - joint_name: "left_palm_link"
+        parent_name: "left_wrist_yaw_link"
+        pos: [0.08, 0.0, 0.0]
+        rot: [1.0, 0.0, 0.0, 0.0]
+      - joint_name: "right_palm_link"
+        parent_name: "right_wrist_yaw_link"
+        pos: [0.08, 0.0, 0.0]
+        rot: [1.0, 0.0, 0.0, 0.0]
+
+    motion_tracking_link:
+      - "left_palm_link"
+      - "right_palm_link"
+      - "head_link"
+
+    upper_body_link:
+      - "left_shoulder_pitch_link"
+      - "left_shoulder_roll_link"
+      - "left_shoulder_yaw_link"
+      - "left_elbow_link"
+      - "left_wrist_roll_link"
+      - "left_wrist_pitch_link"
+      - "left_wrist_yaw_link"
+      - "right_shoulder_pitch_link"
+      - "right_shoulder_roll_link"
+      - "right_shoulder_yaw_link"
+      - "right_elbow_link"
+      - "right_wrist_roll_link"
+      - "right_wrist_pitch_link"
+      - "right_wrist_yaw_link"
+      - "left_palm_link"
+      - "right_palm_link"
+      - "head_link"
+
+    joint_matches:
+      - ["pelvis", "Pelvis"]
+      - ["left_hip_pitch_link", "L_Hip"]
+      - ["left_knee_link", "L_Knee"]
+      - ["left_ankle_roll_link", "L_Ankle"]
+      - ["right_hip_pitch_link", "R_Hip"]
+      - ["right_knee_link", "R_Knee"]
+      - ["right_ankle_roll_link", "R_Ankle"]
+      - ["left_shoulder_roll_link", "L_Shoulder"]
+      - ["left_elbow_link", "L_Elbow"]
+      - ["left_palm_link", "L_Hand"]
+      - ["right_shoulder_roll_link", "R_Shoulder"]
+      - ["right_elbow_link", "R_Elbow"]
+      - ["right_palm_link", "R_Hand"]
+      - ["head_link", "Head"]

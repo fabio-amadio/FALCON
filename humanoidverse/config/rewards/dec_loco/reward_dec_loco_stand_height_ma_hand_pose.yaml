@@ -1,0 +1,30 @@
+# @package _global_
+
+defaults:
+  - reward_dec_loco_stand_height_ma_diff_force
+
+rewards:
+  reward_scales:
+    tracking_palm_pos: 2.0
+    tracking_palm_rot: 1.0
+
+  reward_groups:
+    upper_body: [
+      "tracking_upper_body_dofs",
+      "tracking_palm_pos",
+      "tracking_palm_rot",
+      "penalty_upper_body_torques",
+      "penalty_upper_body_dof_vel",
+      "penalty_upper_body_dof_acc",
+      "penalty_upper_body_action_rate",
+      "limits_upper_body_dof_pos",
+      "limits_upper_body_dof_vel",
+      "limits_upper_body_torque",
+      "penalty_ee_lin_acc",
+      "penalty_ee_ang_acc",
+    ]
+
+  reward_tracking_sigma:
+    upper_body_dofs: 0.2
+    palm_pos: 0.1
+    palm_rot: 1.0

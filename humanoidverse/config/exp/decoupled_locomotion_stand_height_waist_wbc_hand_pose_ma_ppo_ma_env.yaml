@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  - /algo: ppo_decoupled_wbc_ma
+  - /env: decoupled_locomotion_stand_height_waist_wbc_ma_hand_pose
+  - /rewards: dec_loco/reward_dec_loco_stand_height_ma_hand_pose
+  - /robot: g1/g1_29dof_waist_fakehand_hand_pose
+  - /obs: dec_loco/g1_29dof_obs_hand_pose_history_wolinvel_ma
+
+experiment_name: TEST_DecoupledLocomotionHandPose

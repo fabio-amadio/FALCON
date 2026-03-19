@@ -282,3 +282,22 @@ robot.dof_effort_limit_scale=0.9 \
 rewards.reward_initial_penalty_scale=0.1 \
 rewards.reward_penalty_degree=0.0001
 ```
+
+Train with hand-pose references for the upper body:
+
+```bash
+python humanoidverse/train_agent.py \
++exp=decoupled_locomotion_stand_height_waist_wbc_hand_pose_ma_ppo_ma_env \
++simulator=isaacgym \
++domain_rand=domain_rand_rl_gym \
++terrain=terrain_locomotion_plane \
+num_envs=4096 \
+project_name=g1_29dof_falcon \
+experiment_name=g1_29dof_falcon_hand_pose \
++opt=wandb \
+obs.add_noise=True \
+env.config.fix_upper_body_prob=0.3 \
+robot.dof_effort_limit_scale=0.9 \
+rewards.reward_initial_penalty_scale=0.1 \
+rewards.reward_penalty_degree=0.0001
+```

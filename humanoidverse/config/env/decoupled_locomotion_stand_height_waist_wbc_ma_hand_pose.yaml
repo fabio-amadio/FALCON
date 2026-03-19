@@ -1,0 +1,7 @@
+# @package _global_
+
+defaults:
+  - decoupled_locomotion_stand_height_waist_wbc_ma_diff_force_no_residual
+
+env:
+  _target_: humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_waist_wbc_ma_hand_pose.LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose
