@@ -1,7 +1,8 @@
 # @package _global_
 
 defaults:
-  - /rewards: dec_loco/reward_dec_loco_stand_height_ma_diff_force
+  - /rewards/dec_loco/reward_dec_loco_stand_height_ma_diff_force@_here_
+  - _self_
 
 rewards:
   reward_scales:

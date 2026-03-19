@@ -1,7 +1,8 @@
 # @package _global_
 
 defaults:
-  - /robot: g1/g1_29dof_waist_fakehand
+  - /robot/g1/g1_29dof_waist_fakehand@_here_
+  - _self_
 
 robot:
   motion:
