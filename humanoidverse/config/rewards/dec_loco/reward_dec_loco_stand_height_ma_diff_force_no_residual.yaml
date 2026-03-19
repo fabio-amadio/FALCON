@@ -1,9 +1,0 @@
-# @package _global_
-
-defaults:
-  - /rewards: dec_loco/reward_dec_loco_stand_height_ma_diff_force
-  - _self_
-
-rewards:
-  reward_tracking_sigma:
-    upper_body_dofs: 0.2

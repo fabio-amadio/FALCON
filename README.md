@@ -269,7 +269,6 @@ python humanoidverse/train_agent.py \
 +exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_no_residual_ma_ppo_ma_env \
 +simulator=isaacgym \
 +domain_rand=domain_rand_rl_gym \
-+rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force_no_residual \
 +robot=g1/g1_29dof_waist_fakehand \
 +terrain=terrain_locomotion_plane \
 +obs=dec_loco/g1_29dof_obs_diff_force_history_wolinvel_ma \
