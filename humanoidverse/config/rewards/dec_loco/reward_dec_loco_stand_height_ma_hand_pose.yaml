@@ -6,7 +6,7 @@ defaults:
 
 rewards:
   reward_scales:
-    tracking_upper_body_dofs: 1.0
+    tracking_upper_body_dofs: 4.0
     tracking_palm_pos: 3.0
     tracking_palm_rot: 1.5
 
