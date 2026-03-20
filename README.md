@@ -314,3 +314,5 @@ python humanoidverse/eval_agent.py \
   '++env.config.locomotion_command_ranges.lin_vel_y=[-0.2,0.2]' \
   '++env.config.locomotion_command_ranges.heading=[1.0,1.0]'
 ```
+
+When evaluating the hand-pose env in the IsaacGym viewer, press `H` to toggle the desired palm-pose reference visualization.
