@@ -8,7 +8,7 @@ from humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_w
 from humanoidverse.envs.env_utils.visualization import Point
 from humanoidverse.utils.torch_utils import quat_conjugate, quat_mul
 
-from isaac_utils.rotations import my_quat_rotate, quaternion_to_matrix
+from isaac_utils.rotations import get_euler_xyz_in_tensor, my_quat_rotate, quaternion_to_matrix
 
 
 class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
@@ -295,7 +295,54 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self._update_hand_pose_tracking_metrics()
 
     def _pre_compute_observations_callback(self):
-        super()._pre_compute_observations_callback()
+        # Keep the hand-pose branch temporally synchronous with the current
+        # control step, while leaving the other WBC envs on the inherited
+        # one-step lookahead reference.
+        self.base_quat[:] = self.simulator.base_quat[:]
+        self.rpy[:] = get_euler_xyz_in_tensor(self.base_quat[:])
+        self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.simulator.robot_root_states[:, 7:10])
+        self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.simulator.robot_root_states[:, 10:13])
+        self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+
+        if self.config.rewards.fix_upper_body:
+            self._latest_motion_res = None
+            self.ref_upper_dof_pos *= 0.0
+        else:
+            offset = self.env_origins
+            self.motion_times = (self.episode_length_buf * self.dt + self.motion_start_times) * (
+                1 - self.fix_upper_body
+            ) + self.fix_upper_body_motion_times * self.fix_upper_body
+            motion_res = self._motion_lib.get_motion_state(
+                self.motion_ids, self.motion_times, offset=offset
+            )
+            self._latest_motion_res = motion_res
+
+            ref_joint_pos = motion_res["dof_pos"]
+            self.ref_body_pos_extend[:, : motion_res["rg_pos_t"].shape[1], :] = motion_res["rg_pos_t"]
+            self.ref_upper_dof_pos = ref_joint_pos[:, self.upper_dof_indices]
+            self.ref_upper_dof_pos *= self.action_scale_upper_body
+
+        B = self.motion_ids.shape[0]
+        rotated_pos_in_parent = my_quat_rotate(
+            self.simulator._rigid_body_rot[:, self.extend_body_parent_ids].reshape(-1, 4),
+            self.extend_body_pos_in_parent.reshape(-1, 3),
+        )
+        self.extend_curr_pos = my_quat_rotate(
+            self.extend_body_rot_in_parent_xyzw.reshape(-1, 4),
+            rotated_pos_in_parent,
+        ).view(self.num_envs, -1, 3) + self.simulator._rigid_body_pos[:, self.extend_body_parent_ids]
+        self._rigid_body_pos_extend = torch.cat([self.simulator._rigid_body_pos, self.extend_curr_pos], dim=1)
+        self.marker_coords[:] = self._rigid_body_pos_extend.reshape(B, -1, 3)
+
+        left_ee_apply_force_pos = (
+            self.extend_curr_pos[:, 0, :] - self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
+        ) * self.left_ee_apply_force_pos_ratio + self.simulator._rigid_body_pos[:, self.left_hand_link_index, :]
+        right_ee_apply_force_pos = (
+            self.extend_curr_pos[:, 1, :] - self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
+        ) * self.right_ee_apply_force_pos_ratio + self.simulator._rigid_body_pos[:, self.right_hand_link_index, :]
+        self.apply_force_pos_tensor[:, self.left_hand_link_index, :] = left_ee_apply_force_pos
+        self.apply_force_pos_tensor[:, self.right_hand_link_index, :] = right_ee_apply_force_pos
+
         self._update_palm_pose_buffers()
 
     def _reward_tracking_palm_pos(self):
