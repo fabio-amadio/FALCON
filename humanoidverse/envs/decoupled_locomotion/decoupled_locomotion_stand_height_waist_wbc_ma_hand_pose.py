@@ -34,8 +34,19 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         left_palm_cfg = palm_cfg[self.left_palm_link]
         right_palm_cfg = palm_cfg[self.right_palm_link]
 
+        motion_body_list = None
+        if self._motion_lib is not None:
+            motion_body_list = list(self._motion_lib.mesh_parsers.body_names_augment)
+
         self.left_palm_parent_index = self.simulator._body_list.index(left_palm_cfg["parent_name"])
         self.right_palm_parent_index = self.simulator._body_list.index(right_palm_cfg["parent_name"])
+        self.motion_torso_index = self.torso_index
+        self.motion_left_palm_parent_index = self.left_palm_parent_index
+        self.motion_right_palm_parent_index = self.right_palm_parent_index
+        if motion_body_list is not None:
+            self.motion_torso_index = motion_body_list.index(self.torso_name)
+            self.motion_left_palm_parent_index = motion_body_list.index(left_palm_cfg["parent_name"])
+            self.motion_right_palm_parent_index = motion_body_list.index(right_palm_cfg["parent_name"])
 
         self.left_palm_pos_in_parent = torch.tensor(
             left_palm_cfg["pos"], dtype=torch.float32, device=self.device
@@ -87,7 +98,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.palm_rot_sq_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self.palm_pos_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self.palm_rot_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
-        self.upper_body_posture_bias_error = torch.zeros(
+        self.upper_body_dofs_error = torch.zeros(
             self.num_envs, dtype=torch.float32, device=self.device
         )
         self.far_hand_pose_tracking_buf = torch.zeros(
@@ -116,14 +127,22 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         quat_wxyz = quat_xyzw[..., [3, 0, 1, 2]]
         return quaternion_to_matrix(quat_wxyz)
 
-    def _world_pose_to_base_frame(self, world_pos, world_rot_xyzw):
-        base_pos = self.simulator.robot_root_states[:, 0:3]
-        base_rot_inv = quat_conjugate(self._safe_normalize_quat_xyzw(self.base_quat))
+    def _world_pose_to_local_frame(self, frame_pos, frame_rot_xyzw, world_pos, world_rot_xyzw):
+        frame_rot_xyzw = self._safe_normalize_quat_xyzw(frame_rot_xyzw)
+        frame_rot_inv = quat_conjugate(frame_rot_xyzw)
         world_rot_xyzw = self._safe_normalize_quat_xyzw(world_rot_xyzw)
 
-        pos_base = quat_rotate_inverse(self.base_quat, world_pos - base_pos)
-        rot_base = self._safe_normalize_quat_xyzw(quat_mul(base_rot_inv, world_rot_xyzw))
-        return pos_base, rot_base
+        pos_local = quat_rotate_inverse(frame_rot_xyzw, world_pos - frame_pos)
+        rot_local = self._safe_normalize_quat_xyzw(quat_mul(frame_rot_inv, world_rot_xyzw))
+        return pos_local, rot_local
+
+    def _local_pose_to_world_frame(self, frame_pos, frame_rot_xyzw, local_pos, local_rot_xyzw):
+        frame_rot_xyzw = self._safe_normalize_quat_xyzw(frame_rot_xyzw)
+        local_rot_xyzw = self._safe_normalize_quat_xyzw(local_rot_xyzw)
+
+        world_pos = my_quat_rotate(frame_rot_xyzw, local_pos) + frame_pos
+        world_rot = self._safe_normalize_quat_xyzw(quat_mul(frame_rot_xyzw, local_rot_xyzw))
+        return world_pos, world_rot
 
     def _compose_palm_world_pose(self, parent_pos, parent_rot_xyzw, palm_pos_in_parent, palm_rot_in_parent_xyzw):
         parent_rot_xyzw = self._safe_normalize_quat_xyzw(parent_rot_xyzw)
@@ -167,6 +186,8 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.log_dict["palm_rot_error"] = self.palm_rot_error.mean()
 
     def _update_palm_pose_buffers(self):
+        curr_torso_pos = self.simulator._rigid_body_pos[:, self.torso_index, :]
+        curr_torso_rot = self.simulator._rigid_body_rot[:, self.torso_index, :]
         curr_left_parent_pos = self.simulator._rigid_body_pos[:, self.left_palm_parent_index, :]
         curr_right_parent_pos = self.simulator._rigid_body_pos[:, self.right_palm_parent_index, :]
         curr_left_parent_rot = self.simulator._rigid_body_rot[:, self.left_palm_parent_index, :]
@@ -187,10 +208,12 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
             motion_res = self._latest_motion_res
             if motion_res is None:
                 motion_res = self._motion_lib.get_motion_state(self.motion_ids, self.motion_times, offset=self.env_origins)
-            ref_left_parent_pos = motion_res["rg_pos_t"][:, self.left_palm_parent_index, :]
-            ref_right_parent_pos = motion_res["rg_pos_t"][:, self.right_palm_parent_index, :]
-            ref_left_parent_rot = motion_res["rg_rot_t"][:, self.left_palm_parent_index, :]
-            ref_right_parent_rot = motion_res["rg_rot_t"][:, self.right_palm_parent_index, :]
+            ref_torso_pos = motion_res["rg_pos_t"][:, self.motion_torso_index, :]
+            ref_torso_rot = motion_res["rg_rot_t"][:, self.motion_torso_index, :]
+            ref_left_parent_pos = motion_res["rg_pos_t"][:, self.motion_left_palm_parent_index, :]
+            ref_right_parent_pos = motion_res["rg_pos_t"][:, self.motion_right_palm_parent_index, :]
+            ref_left_parent_rot = motion_res["rg_rot_t"][:, self.motion_left_palm_parent_index, :]
+            ref_right_parent_rot = motion_res["rg_rot_t"][:, self.motion_right_palm_parent_index, :]
 
             ref_left_world_pos, ref_left_world_rot = self._compose_palm_world_pose(
                 ref_left_parent_pos,
@@ -204,21 +227,37 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
                 self.right_palm_pos_in_parent,
                 self.right_palm_rot_in_parent_xyzw,
             )
-            self.ref_left_palm_pos_world[:] = ref_left_world_pos
-            self.ref_right_palm_pos_world[:] = ref_right_world_pos
-            self.ref_left_palm_rot_world_xyzw[:] = ref_left_world_rot
-            self.ref_right_palm_rot_world_xyzw[:] = ref_right_world_rot
+            self.ref_left_palm_pos[:], ref_left_rot_torso = self._world_pose_to_local_frame(
+                ref_torso_pos,
+                ref_torso_rot,
+                ref_left_world_pos,
+                ref_left_world_rot,
+            )
+            self.ref_right_palm_pos[:], ref_right_rot_torso = self._world_pose_to_local_frame(
+                ref_torso_pos,
+                ref_torso_rot,
+                ref_right_world_pos,
+                ref_right_world_rot,
+            )
+            self.ref_left_palm_rot_xyzw[:] = ref_left_rot_torso
+            self.ref_right_palm_rot_xyzw[:] = ref_right_rot_torso
+            self.ref_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(ref_left_rot_torso)
+            self.ref_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(ref_right_rot_torso)
 
-            self.ref_left_palm_pos[:], ref_left_rot_base = self._world_pose_to_base_frame(
-                ref_left_world_pos, ref_left_world_rot
+            # Visualize the desired palm pose in the current robot torso frame, so
+            # the world-space debug view directly shows the torso-relative mismatch.
+            self.ref_left_palm_pos_world[:], self.ref_left_palm_rot_world_xyzw[:] = self._local_pose_to_world_frame(
+                curr_torso_pos,
+                curr_torso_rot,
+                self.ref_left_palm_pos,
+                self.ref_left_palm_rot_xyzw,
             )
-            self.ref_right_palm_pos[:], ref_right_rot_base = self._world_pose_to_base_frame(
-                ref_right_world_pos, ref_right_world_rot
+            self.ref_right_palm_pos_world[:], self.ref_right_palm_rot_world_xyzw[:] = self._local_pose_to_world_frame(
+                curr_torso_pos,
+                curr_torso_rot,
+                self.ref_right_palm_pos,
+                self.ref_right_palm_rot_xyzw,
             )
-            self.ref_left_palm_rot_xyzw[:] = ref_left_rot_base
-            self.ref_right_palm_rot_xyzw[:] = ref_right_rot_base
-            self.ref_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(ref_left_rot_base)
-            self.ref_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(ref_right_rot_base)
 
         curr_left_world_pos, curr_left_world_rot = self._compose_palm_world_pose(
             curr_left_parent_pos,
@@ -237,16 +276,22 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.curr_left_palm_rot_world_xyzw[:] = curr_left_world_rot
         self.curr_right_palm_rot_world_xyzw[:] = curr_right_world_rot
 
-        self.curr_left_palm_pos[:], curr_left_rot_base = self._world_pose_to_base_frame(
-            curr_left_world_pos, curr_left_world_rot
+        self.curr_left_palm_pos[:], curr_left_rot_torso = self._world_pose_to_local_frame(
+            curr_torso_pos,
+            curr_torso_rot,
+            curr_left_world_pos,
+            curr_left_world_rot,
         )
-        self.curr_right_palm_pos[:], curr_right_rot_base = self._world_pose_to_base_frame(
-            curr_right_world_pos, curr_right_world_rot
+        self.curr_right_palm_pos[:], curr_right_rot_torso = self._world_pose_to_local_frame(
+            curr_torso_pos,
+            curr_torso_rot,
+            curr_right_world_pos,
+            curr_right_world_rot,
         )
-        self.curr_left_palm_rot_xyzw[:] = curr_left_rot_base
-        self.curr_right_palm_rot_xyzw[:] = curr_right_rot_base
-        self.curr_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_left_rot_base)
-        self.curr_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_right_rot_base)
+        self.curr_left_palm_rot_xyzw[:] = curr_left_rot_torso
+        self.curr_right_palm_rot_xyzw[:] = curr_right_rot_torso
+        self.curr_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_left_rot_torso)
+        self.curr_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_right_rot_torso)
         self._update_hand_pose_tracking_metrics()
 
     def _pre_compute_observations_callback(self):
@@ -265,22 +310,22 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
 
         return torch.exp(-self.palm_rot_sq_error / self.config.rewards.reward_tracking_sigma.palm_rot)
 
-    def _reward_tracking_upper_body_posture_bias(self):
+    def _reward_tracking_upper_body_dofs(self):
         if self.config.rewards.fix_upper_body:
             return torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
         upper_body_pos = self.simulator.dof_pos[:, self.upper_dof_indices]
-        self.upper_body_posture_bias_error[:] = torch.sum(
+        self.upper_body_dofs_error[:] = torch.sum(
             torch.square(upper_body_pos - self.ref_upper_dof_pos), dim=1
         )
-        posture_bias_reward = torch.exp(
-            -self.upper_body_posture_bias_error
-            / self.config.rewards.reward_tracking_sigma.upper_body_posture_bias
+        upper_body_dofs_reward = torch.exp(
+            -self.upper_body_dofs_error
+            / self.config.rewards.reward_tracking_sigma.upper_body_dofs
         )
-        self.upper_body_dofs_tracking_reward += posture_bias_reward
-        self.log_dict["upper_body_posture_bias_error"] = self.upper_body_posture_bias_error.mean()
-        self.log_dict["upper_body_posture_bias_reward"] = posture_bias_reward.mean()
-        return posture_bias_reward
+        self.upper_body_dofs_tracking_reward += upper_body_dofs_reward
+        self.log_dict["upper_body_dofs_error"] = self.upper_body_dofs_error.mean()
+        self.log_dict["upper_body_dofs_reward"] = upper_body_dofs_reward.mean()
+        return upper_body_dofs_reward
 
     def _update_far_upper_dof_pos_buf(self):
         if self.config.rewards.fix_upper_body:

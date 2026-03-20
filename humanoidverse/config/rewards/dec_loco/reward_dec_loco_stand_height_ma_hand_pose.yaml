@@ -6,14 +6,13 @@ defaults:
 
 rewards:
   reward_scales:
-    tracking_upper_body_dofs: 0.0
-    tracking_upper_body_posture_bias: 0.2
+    tracking_upper_body_dofs: 0.2
     tracking_palm_pos: 3.0
     tracking_palm_rot: 1.5
 
   reward_groups:
     upper_body: [
-      "tracking_upper_body_posture_bias",
+      "tracking_upper_body_dofs",
       "tracking_palm_pos",
       "tracking_palm_rot",
       "penalty_upper_body_torques",
@@ -29,6 +28,5 @@ rewards:
 
   reward_tracking_sigma:
     upper_body_dofs: 0.2
-    upper_body_posture_bias: 0.2
     palm_pos: 0.5
     palm_rot: 2.0
