@@ -307,10 +307,10 @@ class LeggedRobotBase(BaseTask):
         self.last_dof_pos[:] = self.simulator.dof_pos[:]
         self.last_dof_vel[:] = self.simulator.dof_vel[:]
         self.last_root_vel[:] = self.simulator.robot_root_states[:, 7:13]
-        self.last_left_ee_vel[:] = self.simulator._rigid_body_vel[:, self.left_hand_link_index, :].view(self.num_envs, -1)
-        self.last_left_ee_ang_vel[:] = self.simulator._rigid_body_ang_vel[:, self.right_hand_link_index, :].view(self.num_envs, -1)
-        self.last_right_ee_vel[:] = self.simulator._rigid_body_vel[:, self.left_hand_link_index, :].view(self.num_envs, -1)
-        self.last_right_ee_ang_vel[:] = self.simulator._rigid_body_ang_vel[:, self.right_hand_link_index, :].view(self.num_envs, -1)
+        self.last_left_ee_vel[:] = self.simulator._rigid_body_vel[:, self.left_hand_link_index, 0:3]
+        self.last_left_ee_ang_vel[:] = self.simulator._rigid_body_ang_vel[:, self.left_hand_link_index, 0:3]
+        self.last_right_ee_vel[:] = self.simulator._rigid_body_vel[:, self.right_hand_link_index, 0:3]
+        self.last_right_ee_ang_vel[:] = self.simulator._rigid_body_ang_vel[:, self.right_hand_link_index, 0:3]
 
 
     def _check_termination(self):

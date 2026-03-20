@@ -17,6 +17,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.init_done = False
         super().__init__(config, device)
 
+        # Use synthetic palm links as the canonical hand-pose frame for this branch.
         self.left_palm_link = "left_palm_link"
         self.right_palm_link = "right_palm_link"
         self.left_palm_link_index = self.simulator._body_list.index(self.left_palm_link)
@@ -65,6 +66,17 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.curr_left_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
         self.curr_right_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
 
+        self.palm_pos_sq_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self.palm_rot_sq_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self.palm_pos_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self.palm_rot_error = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+        self.upper_body_posture_bias_error = torch.zeros(
+            self.num_envs, dtype=torch.float32, device=self.device
+        )
+        self.far_hand_pose_tracking_buf = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.bool
+        )
+
     def _safe_normalize_quat_xyzw(self, quat_xyzw):
         quat_xyzw = quat_xyzw.clone()
         quat_norm = torch.linalg.norm(quat_xyzw, dim=-1, keepdim=True)
@@ -105,6 +117,32 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         quat_rel = self._safe_normalize_quat_xyzw(quat_mul(quat_conjugate(quat_a_xyzw), quat_b_xyzw))
         quat_rel_w = quat_rel[..., 3].abs().clamp(max=1.0)
         return 2.0 * torch.acos(quat_rel_w)
+
+    def _update_hand_pose_tracking_metrics(self):
+        if self.config.rewards.fix_upper_body:
+            self.palm_pos_sq_error.zero_()
+            self.palm_rot_sq_error.zero_()
+            self.palm_pos_error.zero_()
+            self.palm_rot_error.zero_()
+            self.log_dict["palm_pos_error"] = torch.tensor(0.0, device=self.device)
+            self.log_dict["palm_rot_error"] = torch.tensor(0.0, device=self.device)
+            return
+
+        left_pos_delta = self.curr_left_palm_pos - self.ref_left_palm_pos
+        right_pos_delta = self.curr_right_palm_pos - self.ref_right_palm_pos
+        left_rot_error = self._quat_angle_error(self.curr_left_palm_rot_xyzw, self.ref_left_palm_rot_xyzw)
+        right_rot_error = self._quat_angle_error(self.curr_right_palm_rot_xyzw, self.ref_right_palm_rot_xyzw)
+
+        self.palm_pos_sq_error[:] = torch.sum(torch.square(left_pos_delta), dim=1)
+        self.palm_pos_sq_error += torch.sum(torch.square(right_pos_delta), dim=1)
+        self.palm_rot_sq_error[:] = torch.square(left_rot_error) + torch.square(right_rot_error)
+        self.palm_pos_error[:] = 0.5 * (
+            torch.linalg.norm(left_pos_delta, dim=1) + torch.linalg.norm(right_pos_delta, dim=1)
+        )
+        self.palm_rot_error[:] = 0.5 * (left_rot_error + right_rot_error)
+
+        self.log_dict["palm_pos_error"] = self.palm_pos_error.mean()
+        self.log_dict["palm_rot_error"] = self.palm_rot_error.mean()
 
     def _update_palm_pose_buffers(self):
         curr_left_parent_pos = self.simulator._rigid_body_pos[:, self.left_palm_parent_index, :]
@@ -175,6 +213,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.curr_right_palm_rot_xyzw[:] = curr_right_rot_base
         self.curr_left_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_left_rot_base)
         self.curr_right_palm_rot_6d[:] = self._quat_xyzw_to_rot6d(curr_right_rot_base)
+        self._update_hand_pose_tracking_metrics()
 
     def _pre_compute_observations_callback(self):
         super()._pre_compute_observations_callback()
@@ -184,18 +223,67 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         if self.config.rewards.fix_upper_body:
             return torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
-        palm_pos_error = torch.sum(torch.square(self.curr_left_palm_pos - self.ref_left_palm_pos), dim=1)
-        palm_pos_error += torch.sum(torch.square(self.curr_right_palm_pos - self.ref_right_palm_pos), dim=1)
-        return torch.exp(-palm_pos_error / self.config.rewards.reward_tracking_sigma.palm_pos)
+        return torch.exp(-self.palm_pos_sq_error / self.config.rewards.reward_tracking_sigma.palm_pos)
 
     def _reward_tracking_palm_rot(self):
         if self.config.rewards.fix_upper_body:
             return torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
-        left_rot_error = self._quat_angle_error(self.curr_left_palm_rot_xyzw, self.ref_left_palm_rot_xyzw)
-        right_rot_error = self._quat_angle_error(self.curr_right_palm_rot_xyzw, self.ref_right_palm_rot_xyzw)
-        palm_rot_error = torch.square(left_rot_error) + torch.square(right_rot_error)
-        return torch.exp(-palm_rot_error / self.config.rewards.reward_tracking_sigma.palm_rot)
+        return torch.exp(-self.palm_rot_sq_error / self.config.rewards.reward_tracking_sigma.palm_rot)
+
+    def _reward_tracking_upper_body_posture_bias(self):
+        if self.config.rewards.fix_upper_body:
+            return torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+
+        upper_body_pos = self.simulator.dof_pos[:, self.upper_dof_indices]
+        self.upper_body_posture_bias_error[:] = torch.sum(
+            torch.square(upper_body_pos - self.ref_upper_dof_pos), dim=1
+        )
+        posture_bias_reward = torch.exp(
+            -self.upper_body_posture_bias_error
+            / self.config.rewards.reward_tracking_sigma.upper_body_posture_bias
+        )
+        self.upper_body_dofs_tracking_reward += posture_bias_reward
+        self.log_dict["upper_body_posture_bias_error"] = self.upper_body_posture_bias_error.mean()
+        self.log_dict["upper_body_posture_bias_reward"] = posture_bias_reward.mean()
+        return posture_bias_reward
+
+    def _update_far_upper_dof_pos_buf(self):
+        if self.config.rewards.fix_upper_body:
+            self.far_upper_dof_pos_buf[:] = False
+            self.far_hand_pose_tracking_buf[:] = False
+            return
+
+        if self.config.termination.terminate_when_low_upper_dof_tracking:
+            dof_dev = torch.exp(
+                -0.5
+                * torch.norm(
+                    self.simulator.dof_pos[:, self.upper_dof_indices] - self.ref_upper_dof_pos,
+                    dim=1,
+                )
+            )
+            self.far_upper_dof_pos_buf[:] = (
+                dof_dev
+                < self.config.termination_scales.terminate_when_low_upper_dof_tracking_threshold
+            )
+            self.reset_buf |= self.far_upper_dof_pos_buf
+        else:
+            self.far_upper_dof_pos_buf[:] = False
+
+        if self.config.termination.get("terminate_when_low_hand_pose_tracking", False):
+            palm_tracking_score = 0.5 * (
+                self._reward_tracking_palm_pos() + self._reward_tracking_palm_rot()
+            )
+            self.far_hand_pose_tracking_buf[:] = (
+                palm_tracking_score
+                < self.config.termination_scales.get(
+                    "terminate_when_low_hand_pose_tracking_threshold",
+                    self.config.termination_scales.terminate_when_low_upper_dof_tracking_threshold,
+                )
+            )
+            self.reset_buf |= self.far_hand_pose_tracking_buf
+        else:
+            self.far_hand_pose_tracking_buf[:] = False
 
     def _get_obs_ref_left_palm_pos(self):
         return self.ref_left_palm_pos
