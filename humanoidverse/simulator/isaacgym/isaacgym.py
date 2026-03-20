@@ -25,6 +25,7 @@ class IsaacGym(BaseSimulator):
             self.save_rendering_dir = Path(config.save_rendering_dir)
         # For force visualization
         self.vis_force_range = False
+        self.vis_hand_pose_tracking = False
 
     def set_headless(self, headless):
         # call super
@@ -566,6 +567,9 @@ class IsaacGym(BaseSimulator):
         self.gym.subscribe_viewer_keyboard_event(
             self.viewer, gymapi.KEY_B, "vis_force_range"
         )
+        self.gym.subscribe_viewer_keyboard_event(
+            self.viewer, gymapi.KEY_H, "vis_hand_pose_tracking"
+        )
 
         # self.gym.subscribe_viewer_keyboard_event(
         #     self.viewer, gymapi.KEY_UP, "force_left_up"
@@ -672,6 +676,9 @@ class IsaacGym(BaseSimulator):
             elif evt.action == "vis_force_range" and evt.value > 0:
                 self.vis_force_range = 1 - self.vis_force_range
                 logger.info(f"Vis force range: {self.vis_force_range}")
+            elif evt.action == "vis_hand_pose_tracking" and evt.value > 0:
+                self.vis_hand_pose_tracking = 1 - self.vis_hand_pose_tracking
+                logger.info(f"Vis hand pose tracking: {self.vis_hand_pose_tracking}")
 
         # fetch results
         if self.device != 'cpu':

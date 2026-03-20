@@ -5,6 +5,7 @@ import torch
 from humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_waist_wbc_ma_diff_force import (
     LeggedRobotDecoupledLocomotionStanceHeightWBCForce,
 )
+from humanoidverse.envs.env_utils.visualization import Point
 from humanoidverse.utils.torch_utils import quat_conjugate, quat_mul
 
 from isaac_utils.rotations import my_quat_rotate, quaternion_to_matrix
@@ -55,11 +56,27 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         self.ref_right_palm_pos = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
         self.curr_left_palm_pos = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
         self.curr_right_palm_pos = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
+        self.ref_left_palm_pos_world = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
+        self.ref_right_palm_pos_world = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
+        self.curr_left_palm_pos_world = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
+        self.curr_right_palm_pos_world = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
 
         self.ref_left_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
         self.ref_right_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
         self.curr_left_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
         self.curr_right_palm_rot_xyzw = torch.zeros(self.num_envs, 4, dtype=torch.float32, device=self.device)
+        self.ref_left_palm_rot_world_xyzw = torch.zeros(
+            self.num_envs, 4, dtype=torch.float32, device=self.device
+        )
+        self.ref_right_palm_rot_world_xyzw = torch.zeros(
+            self.num_envs, 4, dtype=torch.float32, device=self.device
+        )
+        self.curr_left_palm_rot_world_xyzw = torch.zeros(
+            self.num_envs, 4, dtype=torch.float32, device=self.device
+        )
+        self.curr_right_palm_rot_world_xyzw = torch.zeros(
+            self.num_envs, 4, dtype=torch.float32, device=self.device
+        )
 
         self.ref_left_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
         self.ref_right_palm_rot_6d = torch.zeros(self.num_envs, 6, dtype=torch.float32, device=self.device)
@@ -93,6 +110,11 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         # Use the first two columns of the rotation matrix, flattened column-wise.
         first_two_columns = rot_mat[..., :, :2]
         return first_two_columns.transpose(-1, -2).reshape(rot_mat.shape[:-2] + (6,))
+
+    def _quat_xyzw_to_rotmat(self, quat_xyzw):
+        quat_xyzw = self._safe_normalize_quat_xyzw(quat_xyzw)
+        quat_wxyz = quat_xyzw[..., [3, 0, 1, 2]]
+        return quaternion_to_matrix(quat_wxyz)
 
     def _world_pose_to_base_frame(self, world_pos, world_rot_xyzw):
         base_pos = self.simulator.robot_root_states[:, 0:3]
@@ -153,8 +175,12 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         if self.config.rewards.fix_upper_body:
             self.ref_left_palm_pos.zero_()
             self.ref_right_palm_pos.zero_()
+            self.ref_left_palm_pos_world.zero_()
+            self.ref_right_palm_pos_world.zero_()
             self.ref_left_palm_rot_xyzw.zero_()
             self.ref_right_palm_rot_xyzw.zero_()
+            self.ref_left_palm_rot_world_xyzw.zero_()
+            self.ref_right_palm_rot_world_xyzw.zero_()
             self.ref_left_palm_rot_6d.zero_()
             self.ref_right_palm_rot_6d.zero_()
         else:
@@ -178,6 +204,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
                 self.right_palm_pos_in_parent,
                 self.right_palm_rot_in_parent_xyzw,
             )
+            self.ref_left_palm_pos_world[:] = ref_left_world_pos
+            self.ref_right_palm_pos_world[:] = ref_right_world_pos
+            self.ref_left_palm_rot_world_xyzw[:] = ref_left_world_rot
+            self.ref_right_palm_rot_world_xyzw[:] = ref_right_world_rot
 
             self.ref_left_palm_pos[:], ref_left_rot_base = self._world_pose_to_base_frame(
                 ref_left_world_pos, ref_left_world_rot
@@ -202,6 +232,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
             self.right_palm_pos_in_parent,
             self.right_palm_rot_in_parent_xyzw,
         )
+        self.curr_left_palm_pos_world[:] = curr_left_world_pos
+        self.curr_right_palm_pos_world[:] = curr_right_world_pos
+        self.curr_left_palm_rot_world_xyzw[:] = curr_left_world_rot
+        self.curr_right_palm_rot_world_xyzw[:] = curr_right_world_rot
 
         self.curr_left_palm_pos[:], curr_left_rot_base = self._world_pose_to_base_frame(
             curr_left_world_pos, curr_left_world_rot
@@ -296,3 +330,173 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
 
     def _get_obs_ref_right_palm_rot_6d(self):
         return self.ref_right_palm_rot_6d
+
+    def _hand_pose_debug_cfg_get(self, key, default):
+        visualization_cfg = self.config.robot.motion.get("visualization", None)
+        if visualization_cfg is None:
+            return default
+        hand_pose_debug_cfg = visualization_cfg.get("hand_pose_tracking", None)
+        if hand_pose_debug_cfg is None:
+            return default
+        return hand_pose_debug_cfg.get(key, default)
+
+    def _draw_thick_line(self, env_id, start_point, end_point, color, line_width):
+        color_point = Point(torch.tensor(color, dtype=torch.float32, device=self.device))
+        direction = end_point - start_point
+        direction_norm = torch.linalg.norm(direction)
+        if direction_norm < 1e-8 or line_width <= 0.0:
+            self.simulator.draw_line(Point(start_point), Point(end_point), color_point, env_id)
+            return
+
+        direction = direction / direction_norm
+        if torch.abs(direction[2]) < 0.9:
+            reference_axis = torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32, device=self.device)
+        else:
+            reference_axis = torch.tensor([0.0, 1.0, 0.0], dtype=torch.float32, device=self.device)
+
+        ortho_axis_a = torch.cross(direction, reference_axis, dim=0)
+        ortho_axis_a_norm = torch.linalg.norm(ortho_axis_a)
+        if ortho_axis_a_norm < 1e-8:
+            reference_axis = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32, device=self.device)
+            ortho_axis_a = torch.cross(direction, reference_axis, dim=0)
+            ortho_axis_a_norm = torch.linalg.norm(ortho_axis_a)
+        ortho_axis_a = ortho_axis_a / ortho_axis_a_norm.clamp_min(1e-8)
+        ortho_axis_b = torch.cross(direction, ortho_axis_a, dim=0)
+        ortho_axis_b = ortho_axis_b / torch.linalg.norm(ortho_axis_b).clamp_min(1e-8)
+
+        diagonal_scale = 0.7 * line_width
+        offsets = (
+            torch.zeros(3, dtype=torch.float32, device=self.device),
+            ortho_axis_a * line_width,
+            -ortho_axis_a * line_width,
+            ortho_axis_b * line_width,
+            -ortho_axis_b * line_width,
+            (ortho_axis_a + ortho_axis_b) * diagonal_scale,
+            (ortho_axis_a - ortho_axis_b) * diagonal_scale,
+            (-ortho_axis_a + ortho_axis_b) * diagonal_scale,
+            (-ortho_axis_a - ortho_axis_b) * diagonal_scale,
+        )
+        for offset in offsets:
+            self.simulator.draw_line(
+                Point(start_point + offset),
+                Point(end_point + offset),
+                color_point,
+                env_id,
+            )
+
+    def _draw_pose_axes(
+        self,
+        env_id,
+        origin,
+        rot_xyzw,
+        axis_length,
+        sphere_radius,
+        axis_line_width,
+        origin_color,
+        axis_colors,
+    ):
+        self.simulator.draw_sphere(origin, sphere_radius, origin_color, env_id)
+        rot_mat = self._quat_xyzw_to_rotmat(rot_xyzw.unsqueeze(0))[0]
+        for axis_id, axis_color in enumerate(axis_colors):
+            end_point = origin + rot_mat[:, axis_id] * axis_length
+            self._draw_thick_line(env_id, origin, end_point, axis_color, axis_line_width)
+
+    def _draw_hand_pose_debug_vis(self):
+        num_draw_envs = int(self._hand_pose_debug_cfg_get("num_draw_envs", 1))
+        num_draw_envs = max(1, min(self.num_envs, num_draw_envs))
+        desired_axis_length = float(self._hand_pose_debug_cfg_get("desired_axis_length", 0.14))
+        current_axis_length = float(self._hand_pose_debug_cfg_get("current_axis_length", 0.10))
+        desired_axis_line_width = float(self._hand_pose_debug_cfg_get("desired_axis_line_width", 0.008))
+        current_axis_line_width = float(self._hand_pose_debug_cfg_get("current_axis_line_width", 0.006))
+        desired_sphere_radius = float(self._hand_pose_debug_cfg_get("desired_sphere_radius", 0.02))
+        current_sphere_radius = float(self._hand_pose_debug_cfg_get("current_sphere_radius", 0.015))
+        draw_error_line = bool(self._hand_pose_debug_cfg_get("draw_error_line", False))
+
+        desired_origin_color = (1.0, 0.82, 0.12)
+        current_origin_color = (0.93, 0.93, 0.93)
+        desired_axis_colors = (
+            (0.95, 0.12, 0.12),
+            (0.12, 0.9, 0.18),
+            (0.15, 0.45, 0.98),
+        )
+        current_axis_colors = (
+            (0.55, 0.30, 0.30),
+            (0.28, 0.55, 0.30),
+            (0.28, 0.42, 0.65),
+        )
+        error_line_colors = (
+            (1.0, 0.65, 0.15),
+            (0.2, 0.85, 1.0),
+        )
+
+        for env_id in range(num_draw_envs):
+            self._draw_pose_axes(
+                env_id,
+                self.curr_left_palm_pos_world[env_id],
+                self.curr_left_palm_rot_world_xyzw[env_id],
+                current_axis_length,
+                current_sphere_radius,
+                current_axis_line_width,
+                current_origin_color,
+                current_axis_colors,
+            )
+            self._draw_pose_axes(
+                env_id,
+                self.curr_right_palm_pos_world[env_id],
+                self.curr_right_palm_rot_world_xyzw[env_id],
+                current_axis_length,
+                current_sphere_radius,
+                current_axis_line_width,
+                current_origin_color,
+                current_axis_colors,
+            )
+
+            if not self.config.rewards.fix_upper_body:
+                self._draw_pose_axes(
+                    env_id,
+                    self.ref_left_palm_pos_world[env_id],
+                    self.ref_left_palm_rot_world_xyzw[env_id],
+                    desired_axis_length,
+                    desired_sphere_radius,
+                    desired_axis_line_width,
+                    desired_origin_color,
+                    desired_axis_colors,
+                )
+                self._draw_pose_axes(
+                    env_id,
+                    self.ref_right_palm_pos_world[env_id],
+                    self.ref_right_palm_rot_world_xyzw[env_id],
+                    desired_axis_length,
+                    desired_sphere_radius,
+                    desired_axis_line_width,
+                    desired_origin_color,
+                    desired_axis_colors,
+                )
+
+                if draw_error_line:
+                    self.simulator.draw_line(
+                        Point(self.ref_left_palm_pos_world[env_id]),
+                        Point(self.curr_left_palm_pos_world[env_id]),
+                        Point(torch.tensor(error_line_colors[0], dtype=torch.float32, device=self.device)),
+                        env_id,
+                    )
+                    self.simulator.draw_line(
+                        Point(self.ref_right_palm_pos_world[env_id]),
+                        Point(self.curr_right_palm_pos_world[env_id]),
+                        Point(torch.tensor(error_line_colors[1], dtype=torch.float32, device=self.device)),
+                        env_id,
+                    )
+
+    def _draw_debug_vis(self):
+        hand_pose_debug_enabled = bool(self._hand_pose_debug_cfg_get("enabled", False)) or bool(
+            getattr(self.simulator, "vis_hand_pose_tracking", False)
+        )
+        force_debug_enabled = bool(getattr(self.simulator, "vis_force_range", False))
+
+        if force_debug_enabled:
+            super()._draw_debug_vis()
+        else:
+            self.simulator.clear_lines()
+
+        if hand_pose_debug_enabled:
+            self._draw_hand_pose_debug_vis()

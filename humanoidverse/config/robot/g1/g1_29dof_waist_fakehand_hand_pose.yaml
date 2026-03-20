@@ -68,3 +68,15 @@ robot:
       - ["right_elbow_link", "R_Elbow"]
       - ["right_palm_link", "R_Hand"]
       - ["head_link", "Head"]
+
+    visualization:
+      hand_pose_tracking:
+        enabled: False
+        num_draw_envs: 1
+        desired_axis_length: 0.20
+        current_axis_length: 0.16
+        desired_axis_line_width: 0.010
+        current_axis_line_width: 0.008
+        desired_sphere_radius: 0.02
+        current_sphere_radius: 0.015
+        draw_error_line: False
