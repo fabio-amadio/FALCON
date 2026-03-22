@@ -28,5 +28,5 @@ rewards:
 
   reward_tracking_sigma:
     upper_body_dofs: 0.2
-    palm_pos: 0.02
-    palm_rot: 0.25
+    palm_pos: 0.016
+    palm_rot: 0.20
