@@ -168,6 +168,25 @@ python rl_policy/loco_manip/loco_manip.py \
 
 https://github.com/user-attachments/assets/273b52c1-0248-40e5-b218-e078e74b322d
 
+## G1 29DoF FALCON Hand Pose
+
+### 1. Start Mujoco Env (ONLY for Sim2Sim)
+
+```bash
+python sim_env/loco_manip.py \
+--config=config/g1/g1_29dof_falcon_hand_pose.yaml
+```
+
+### 2. Launch the Policy
+
+```bash
+python rl_policy/loco_manip/loco_manip_hand_pose.py \
+--config=config/g1/g1_29dof_falcon_hand_pose.yaml \
+--model_path=models/falcon/g1_29dof_hand_pose.onnx
+```
+
+This hand-pose deploy path feeds fixed torso-frame palm targets directly to the policy. Press `p` in the policy terminal to cycle through the configured fixed hand-pose presets.
+
 ## T1 29DoF FALCON
 ### 1. Start Mujoco Env (ONLY for Sim2Sim)
 ```bash
