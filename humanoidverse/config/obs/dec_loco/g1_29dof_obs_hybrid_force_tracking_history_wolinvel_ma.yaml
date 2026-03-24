@@ -62,6 +62,27 @@ obs:
     right_force_cmd: 0.0
 
   obs_dims:
+    - base_orientation: 4
+    - base_lin_vel: 3
+    - base_ang_vel: 3
+    - projected_gravity: 3
+    - command_lin_vel: 2
+    - command_ang_vel: 1
+    - command_stand: 1
+    - command_waist_dofs: 3
+    - command_base_height: 1
     - force_tracking_mode: 1
+    - ref_left_palm_pos: 3
+    - ref_right_palm_pos: 3
+    - ref_left_palm_rot_6d: 6
+    - ref_right_palm_rot_6d: 6
     - left_force_cmd: 3
     - right_force_cmd: 3
+    - ref_upper_dof_pos: ${robot.upper_body_actions_dim}
+    - dof_pos: ${robot.dof_obs_size}
+    - dof_vel: ${robot.dof_obs_size}
+    - actions: ${robot.dof_obs_size}
+    - sin_phase: 1
+    - cos_phase: 1
+    - left_ee_apply_force: 3
+    - right_ee_apply_force: 3
