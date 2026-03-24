@@ -6,11 +6,14 @@ defaults:
 
 rewards:
   reward_scales:
-    tracking_upper_body_dofs: 0.0
+    tracking_upper_body_dofs: 4.0
+    tracking_palm_pos: 0.5
+    tracking_palm_rot: 0.5
     tracking_force: 1.0
 
   reward_groups:
     upper_body: [
+      "tracking_upper_body_dofs",
       "tracking_palm_pos",
       "tracking_palm_rot",
       "tracking_force",
