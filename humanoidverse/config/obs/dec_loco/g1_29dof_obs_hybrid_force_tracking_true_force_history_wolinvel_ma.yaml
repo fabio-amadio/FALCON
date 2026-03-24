@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+  - /obs/dec_loco/g1_29dof_obs_hybrid_force_tracking_history_wolinvel_ma@_here_
+  - _self_
+
+obs:
+  obs_dict:
+    actor_obs: [
+      base_ang_vel,
+      projected_gravity,
+      command_lin_vel,
+      command_ang_vel,
+      command_stand,
+      command_waist_dofs,
+      command_base_height,
+      force_tracking_mode,
+      ref_left_palm_pos,
+      ref_right_palm_pos,
+      ref_left_palm_rot_6d,
+      ref_right_palm_rot_6d,
+      left_force_cmd,
+      right_force_cmd,
+      left_ee_apply_force,
+      right_ee_apply_force,
+      dof_pos,
+      dof_vel,
+      actions,
+    ]
