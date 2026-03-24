@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - /env/decoupled_locomotion_stand_height_waist_wbc_ma_hand_pose@_here_
+  - _self_
+
+env:
+  _target_: humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_waist_wbc_ma_hybrid_force_tracking.LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking
+  config:
+    fix_upper_body_prob: 0.0
+    hybrid_force_tracking:
+      mode: binary
+      zero_force_probability: 0.2
+      ramp_duration_s: [2.0, 4.0]
+      hold_duration_s: 1.5
+      force_x_range: [-70.0, 70.0]
+      force_y_range: [-70.0, 70.0]
+      force_z_range: [-70.0, 70.0]
+      kp_range: [25.0, 400.0]
+      kd_range: [3.0, 10.0]

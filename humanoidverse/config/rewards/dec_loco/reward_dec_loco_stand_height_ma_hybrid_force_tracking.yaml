@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+  - /rewards/dec_loco/reward_dec_loco_stand_height_ma_hand_pose@_here_
+  - _self_
+
+rewards:
+  reward_scales:
+    tracking_upper_body_dofs: 0.0
+    tracking_force: 1.0
+
+  reward_groups:
+    upper_body: [
+      "tracking_palm_pos",
+      "tracking_palm_rot",
+      "tracking_force",
+      "penalty_upper_body_torques",
+      "penalty_upper_body_dof_vel",
+      "penalty_upper_body_dof_acc",
+      "penalty_upper_body_action_rate",
+      "limits_upper_body_dof_pos",
+      "limits_upper_body_dof_vel",
+      "limits_upper_body_torque",
+      "penalty_ee_lin_acc",
+      "penalty_ee_ang_acc",
+    ]
+
+  reward_tracking_sigma:
+    force: 20.0
