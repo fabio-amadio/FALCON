@@ -11,7 +11,7 @@ env:
 hybrid_force_tracking:
   mode: binary
   zero_force_probability: 0.2
-  force_mode_upper_body_dofs_scale: 0.05
+  force_mode_upper_body_dofs_scale: 0.0
   force_mode_ee_lin_acc_scale: 0.5
   force_mode_ee_ang_acc_scale: 0.5
   ramp_duration_s: [1.5, 2.5]
