@@ -371,7 +371,6 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose(
         )
         self.upper_body_dofs_tracking_reward += upper_body_dofs_reward
         self.log_dict["upper_body_dofs_error"] = self.upper_body_dofs_error.mean()
-        self.log_dict["upper_body_dofs_reward"] = upper_body_dofs_reward.mean()
         return upper_body_dofs_reward
 
     def _update_far_upper_dof_pos_buf(self):

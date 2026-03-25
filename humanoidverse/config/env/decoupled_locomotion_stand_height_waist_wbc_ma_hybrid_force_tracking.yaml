@@ -7,14 +7,16 @@ defaults:
 env:
   _target_: humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_waist_wbc_ma_hybrid_force_tracking.LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking
   config:
-    fix_upper_body_prob: 0.0
-    hybrid_force_tracking:
-      mode: binary
-      zero_force_probability: 0.2
-      ramp_duration_s: [2.0, 4.0]
-      hold_duration_s: 1.5
-      force_x_range: [-70.0, 70.0]
-      force_y_range: [-70.0, 70.0]
-      force_z_range: [-70.0, 70.0]
-      kp_range: [25.0, 400.0]
-      kd_range: [3.0, 10.0]
+    fix_upper_body_prob: 0.3
+hybrid_force_tracking:
+  mode: binary
+  zero_force_probability: 0.2
+  force_mode_upper_body_dofs_scale: 0.05
+  force_mode_ee_lin_acc_scale: 0.5
+  force_mode_ee_ang_acc_scale: 0.5
+  ramp_duration_s: [1.5, 2.5]
+  hold_duration_s: 2.0
+  force_x_range: [-30.0, 30.0]
+  force_y_range: [-30.0, 30.0]
+  force_z_range: [-30.0, 30.0]
+  kp_range: [150.0, 250.0]

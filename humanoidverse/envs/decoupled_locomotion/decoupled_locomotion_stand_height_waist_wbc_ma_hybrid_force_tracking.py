@@ -25,6 +25,15 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self.force_tracking_mode_name = self._hybrid_force_cfg_get('mode', 'binary')
         self.force_zero_probability = float(self._hybrid_force_cfg_get('zero_force_probability', 0.2))
         self.force_hold_duration_s = float(self._hybrid_force_cfg_get('hold_duration_s', 1.5))
+        self.force_mode_upper_body_dofs_scale = float(
+            self._hybrid_force_cfg_get('force_mode_upper_body_dofs_scale', 0.05)
+        )
+        self.force_mode_ee_lin_acc_scale = float(
+            self._hybrid_force_cfg_get('force_mode_ee_lin_acc_scale', 0.5)
+        )
+        self.force_mode_ee_ang_acc_scale = float(
+            self._hybrid_force_cfg_get('force_mode_ee_ang_acc_scale', 0.5)
+        )
 
         self.force_cmd_low = torch.tensor(
             [
@@ -49,8 +58,6 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
 
         self.force_ramp_duration_range_s = self._hybrid_force_cfg_get('ramp_duration_s', [2.0, 4.0])
         self.force_kp_range = self._hybrid_force_cfg_get('kp_range', [25.0, 400.0])
-        self.force_kd_range = self._hybrid_force_cfg_get('kd_range', [3.0, 10.0])
-
         desired_base_height = self.config.rewards.get('desired_base_height', None)
         if desired_base_height is None:
             desired_base_height = float(self.simulator.robot_root_states[0, 2].item())
@@ -72,9 +79,12 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self.force_phase_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.force_ramp_steps = torch.ones(self.num_envs, dtype=torch.long, device=self.device)
         self.force_hold_steps = torch.ones(self.num_envs, dtype=torch.long, device=self.device)
+        self.force_mode_motion_times = torch.zeros(
+            self.num_envs, dtype=torch.float32, device=self.device
+        )
 
         self.force_kp = torch.ones(self.num_envs, 1, dtype=torch.float32, device=self.device) * self.force_kp_range[0]
-        self.force_kd = torch.ones(self.num_envs, 1, dtype=torch.float32, device=self.device) * self.force_kd_range[0]
+        self.force_kd = 2.0 * torch.sqrt(self.force_kp.clamp_min(0.0))
 
         self.left_force_cmd_peak = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
         self.right_force_cmd_peak = torch.zeros(self.num_envs, 3, dtype=torch.float32, device=self.device)
@@ -103,6 +113,44 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self.force_error_z = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self.force_error_norm = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
+        self.phase_episode_sums = {
+            "pose/reward_tracking_upper_body_dofs": torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            ),
+            "pose/reward_tracking_palm_pos": torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            ),
+            "pose/reward_tracking_palm_rot": torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            ),
+            "force/reward_tracking_upper_body_dofs": torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            ),
+            "force/reward_tracking_palm_rot": torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            ),
+            "force/reward_tracking_force": torch.zeros(
+                self.num_envs, dtype=torch.float32, device=self.device
+            ),
+        }
+
+    def _log_phase_reward(self, log_key, reward, mask):
+        if torch.any(mask):
+            self.log_dict[log_key] = reward[mask].mean()
+        else:
+            self.log_dict[log_key] = torch.tensor(0.0, device=self.device)
+
+    def _log_phase_metric(self, log_key, values, mask):
+        if torch.any(mask):
+            self.log_dict[log_key] = values[mask].mean()
+        else:
+            self.log_dict[log_key] = torch.tensor(0.0, device=self.device)
+
+    def _accumulate_phase_episode_reward(self, episode_key, reward, mask, reward_name):
+        if not torch.any(mask):
+            return
+        self.phase_episode_sums[episode_key][mask] += reward[mask] * self.reward_scales[reward_name]
+
     def _sample_force_tracking_mode(self, env_ids):
         if self.force_tracking_mode_name == 'mixed':
             self.force_tracking_mode[env_ids, 0] = torch.rand(len(env_ids), device=self.device)
@@ -125,6 +173,12 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self.force_phase_step[env_ids] = 0
         self.force_mode_needs_anchor_reset[env_ids] = self.force_tracking_mode[env_ids, 0] > 0.5
         self.palm_yaw_state_valid[env_ids] = False
+        current_motion_times = (
+            (self.episode_length_buf[env_ids] * self.dt + self.motion_start_times[env_ids])
+            * (1.0 - self.fix_upper_body[env_ids])
+            + self.fix_upper_body_motion_times[env_ids] * self.fix_upper_body[env_ids]
+        )
+        self.force_mode_motion_times[env_ids] = current_motion_times
 
         ramp_duration_s = torch_rand_float(
             self.force_ramp_duration_range_s[0],
@@ -140,9 +194,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self.force_kp[env_ids, 0] = torch_rand_float(
             self.force_kp_range[0], self.force_kp_range[1], (len(env_ids), 1), device=self.device
         ).squeeze(-1)
-        self.force_kd[env_ids, 0] = torch_rand_float(
-            self.force_kd_range[0], self.force_kd_range[1], (len(env_ids), 1), device=self.device
-        ).squeeze(-1)
+        self.force_kd[env_ids, 0] = 2.0 * torch.sqrt(self.force_kp[env_ids, 0].clamp_min(0.0))
 
         force_span = self.force_cmd_high - self.force_cmd_low
         self.left_force_cmd_peak[env_ids] = (
@@ -274,18 +326,35 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
 
         force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
         position_mode_mask = ~force_mode_mask
-        if torch.any(position_mode_mask):
-            self.log_dict['palm_pos_error'] = self.palm_pos_error[position_mode_mask].mean()
-            self.log_dict['palm_rot_error'] = self.palm_rot_error[position_mode_mask].mean()
-        else:
-            self.log_dict['palm_pos_error'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['palm_rot_error'] = torch.tensor(0.0, device=self.device)
+        self.log_dict.pop("palm_pos_error", None)
+        self.log_dict.pop("palm_rot_error", None)
+        self._log_phase_metric("pose/palm_pos_error", self.palm_pos_error, position_mode_mask)
+        self._log_phase_metric("pose/palm_rot_error", self.palm_rot_error, position_mode_mask)
+        self._log_phase_metric("force/palm_rot_error", self.palm_rot_error, force_mode_mask)
 
-        self.log_dict['force_mode_fraction'] = force_mode_mask.float().mean()
-        self.log_dict['zero_force_fraction'] = self.force_tracking_zero_force.float().mean()
+        self.log_dict['pose/mode_fraction'] = position_mode_mask.float().mean()
+        self.log_dict['force/mode_fraction'] = force_mode_mask.float().mean()
+        self.log_dict['force/zero_force_fraction'] = self.force_tracking_zero_force.float().mean()
 
     def _pre_compute_observations_callback(self):
-        super()._pre_compute_observations_callback()
+        force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
+        original_fix_upper_body = self.fix_upper_body
+        original_fix_upper_body_motion_times = self.fix_upper_body_motion_times
+
+        if torch.any(force_mode_mask):
+            self.fix_upper_body = torch.maximum(original_fix_upper_body, force_mode_mask.float())
+            self.fix_upper_body_motion_times = torch.where(
+                force_mode_mask,
+                self.force_mode_motion_times,
+                original_fix_upper_body_motion_times,
+            )
+
+        try:
+            super()._pre_compute_observations_callback()
+        finally:
+            self.fix_upper_body = original_fix_upper_body
+            self.fix_upper_body_motion_times = original_fix_upper_body_motion_times
+
         self._update_hybrid_force_tracking_frame_buffers()
         self.apply_force_pos_tensor[:, self.left_hand_link_index, :] = self.curr_left_palm_pos_world
         self.apply_force_pos_tensor[:, self.right_hand_link_index, :] = self.curr_right_palm_pos_world
@@ -333,10 +402,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
 
         force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
         if not torch.any(force_mode_mask):
-            self.log_dict['force_error_x'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['force_error_y'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['force_error_z'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['force_error_norm'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force/force_error_x'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force/force_error_y'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force/force_error_z'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force/force_error_norm'] = torch.tensor(0.0, device=self.device)
             return
 
         left_force_error = self.left_applied_force_yaw - self.left_force_cmd
@@ -355,10 +424,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
             torch.linalg.norm(left_force_error, dim=1) + torch.linalg.norm(right_force_error, dim=1)
         )
 
-        self.log_dict['force_error_x'] = self.force_error_x[force_mode_mask].mean()
-        self.log_dict['force_error_y'] = self.force_error_y[force_mode_mask].mean()
-        self.log_dict['force_error_z'] = self.force_error_z[force_mode_mask].mean()
-        self.log_dict['force_error_norm'] = self.force_error_norm[force_mode_mask].mean()
+        self.log_dict['force/force_error_x'] = self.force_error_x[force_mode_mask].mean()
+        self.log_dict['force/force_error_y'] = self.force_error_y[force_mode_mask].mean()
+        self.log_dict['force/force_error_z'] = self.force_error_z[force_mode_mask].mean()
+        self.log_dict['force/force_error_norm'] = self.force_error_norm[force_mode_mask].mean()
 
     def _reward_tracking_force(self):
         self._update_force_tracking_metrics()
@@ -366,6 +435,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
         reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         if not torch.any(force_mode_mask):
+            self.log_dict["force/reward_tracking_force"] = torch.tensor(0.0, device=self.device)
             return reward
 
         left_force_error = self.left_applied_force_yaw - self.left_force_cmd
@@ -377,16 +447,107 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
             -combined_force_error[force_mode_mask]
             / self.config.rewards.reward_tracking_sigma.force
         )
+        self._log_phase_reward("force/reward_tracking_force", reward, force_mode_mask)
+        self._accumulate_phase_episode_reward(
+            "force/reward_tracking_force", reward, force_mode_mask, "tracking_force"
+        )
         return reward
 
     def _reward_tracking_palm_pos(self):
-        return super()._reward_tracking_palm_pos() * (1.0 - self.force_tracking_mode[:, 0])
+        reward = super()._reward_tracking_palm_pos()
+        position_mode_mask = self.force_tracking_mode[:, 0] <= 0.5
+        reward = reward * position_mode_mask.float()
+        self._log_phase_reward("pose/reward_tracking_palm_pos", reward, position_mode_mask)
+        self._accumulate_phase_episode_reward(
+            "pose/reward_tracking_palm_pos", reward, position_mode_mask, "tracking_palm_pos"
+        )
+        return reward
 
     def _reward_tracking_palm_rot(self):
-        return super()._reward_tracking_palm_rot() * (1.0 - self.force_tracking_mode[:, 0])
+        reward = super()._reward_tracking_palm_rot()
+        force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
+        position_mode_mask = ~force_mode_mask
+        self._log_phase_reward("pose/reward_tracking_palm_rot", reward, position_mode_mask)
+        self._log_phase_reward("force/reward_tracking_palm_rot", reward, force_mode_mask)
+        self._accumulate_phase_episode_reward(
+            "pose/reward_tracking_palm_rot", reward, position_mode_mask, "tracking_palm_rot"
+        )
+        self._accumulate_phase_episode_reward(
+            "force/reward_tracking_palm_rot", reward, force_mode_mask, "tracking_palm_rot"
+        )
+        return reward
 
     def _reward_tracking_upper_body_dofs(self):
-        return super()._reward_tracking_upper_body_dofs() * (1.0 - self.force_tracking_mode[:, 0])
+        if self.config.rewards.fix_upper_body:
+            return torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
+
+        upper_body_pos = self.simulator.dof_pos[:, self.upper_dof_indices]
+        self.upper_body_dofs_error[:] = torch.sum(
+            torch.square(upper_body_pos - self.ref_upper_dof_pos), dim=1
+        )
+        upper_body_dofs_reward = torch.exp(
+            -self.upper_body_dofs_error
+            / self.config.rewards.reward_tracking_sigma.upper_body_dofs
+        )
+
+        force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
+        position_mode_mask = ~force_mode_mask
+        reward_scale = torch.ones(self.num_envs, dtype=torch.float32, device=self.device)
+        reward_scale[force_mode_mask] = self.force_mode_upper_body_dofs_scale
+        masked_reward = upper_body_dofs_reward * reward_scale
+        self.upper_body_dofs_tracking_reward += masked_reward
+
+        self._log_phase_reward("pose/reward_tracking_upper_body_dofs", masked_reward, position_mode_mask)
+        self._log_phase_reward("force/reward_tracking_upper_body_dofs", masked_reward, force_mode_mask)
+        self._accumulate_phase_episode_reward(
+            "pose/reward_tracking_upper_body_dofs",
+            masked_reward,
+            position_mode_mask,
+            "tracking_upper_body_dofs",
+        )
+        self._accumulate_phase_episode_reward(
+            "force/reward_tracking_upper_body_dofs",
+            masked_reward,
+            force_mode_mask,
+            "tracking_upper_body_dofs",
+        )
+
+        self._log_phase_metric("pose/upper_body_dofs_error", self.upper_body_dofs_error, position_mode_mask)
+        self._log_phase_metric("force/upper_body_dofs_error", self.upper_body_dofs_error, force_mode_mask)
+
+        return masked_reward
+
+    def _reward_penalty_ee_lin_acc(self):
+        reward = super()._reward_penalty_ee_lin_acc()
+        force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
+        reward_scale = torch.ones(self.num_envs, dtype=torch.float32, device=self.device)
+        reward_scale[force_mode_mask] = self.force_mode_ee_lin_acc_scale
+        return reward * reward_scale
+
+    def _reward_penalty_ee_ang_acc(self):
+        reward = super()._reward_penalty_ee_ang_acc()
+        force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
+        reward_scale = torch.ones(self.num_envs, dtype=torch.float32, device=self.device)
+        reward_scale[force_mode_mask] = self.force_mode_ee_ang_acc_scale
+        return reward * reward_scale
+
+    def reset_envs_idx(self, env_ids, target_states=None, target_buf=None):
+        if len(env_ids) == 0:
+            return
+
+        super().reset_envs_idx(env_ids, target_states=target_states, target_buf=target_buf)
+
+        for key in [
+            "rew_tracking_upper_body_dofs",
+            "rew_tracking_palm_pos",
+            "rew_tracking_palm_rot",
+            "rew_tracking_force",
+        ]:
+            self.extras["episode"].pop(key, None)
+
+        for key, value in self.phase_episode_sums.items():
+            self.extras["episode"][key] = torch.mean(value[env_ids]) / self.max_episode_length_s
+            value[env_ids] = 0.0
 
     def _get_obs_ref_left_palm_pos(self):
         ref_left_palm_pos = super()._get_obs_ref_left_palm_pos().clone()
