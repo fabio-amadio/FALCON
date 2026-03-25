@@ -114,31 +114,28 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self.force_error_norm = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
 
         self.phase_episode_sums = {
-            "pose/reward_tracking_upper_body_dofs": torch.zeros(
+            "rew/upper_body/reward_tracking_upper_body_dofs/pose": torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             ),
-            "pose/reward_tracking_palm_pos": torch.zeros(
+            "rew/upper_body/reward_tracking_palm_pos/pose": torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             ),
-            "pose/reward_tracking_palm_rot": torch.zeros(
+            "rew/upper_body/reward_tracking_palm_rot/pose": torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             ),
-            "force/reward_tracking_upper_body_dofs": torch.zeros(
+            "rew/upper_body/reward_tracking_upper_body_dofs/force": torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             ),
-            "force/reward_tracking_palm_rot": torch.zeros(
+            "rew/upper_body/reward_tracking_palm_rot/force": torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             ),
-            "force/reward_tracking_force": torch.zeros(
+            "rew/upper_body/reward_tracking_force/force": torch.zeros(
                 self.num_envs, dtype=torch.float32, device=self.device
             ),
         }
 
     def _log_phase_reward(self, log_key, reward, mask):
-        if torch.any(mask):
-            self.log_dict[log_key] = reward[mask].mean()
-        else:
-            self.log_dict[log_key] = torch.tensor(0.0, device=self.device)
+        return
 
     def _log_phase_metric(self, log_key, values, mask):
         if torch.any(mask):
@@ -328,13 +325,13 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         position_mode_mask = ~force_mode_mask
         self.log_dict.pop("palm_pos_error", None)
         self.log_dict.pop("palm_rot_error", None)
-        self._log_phase_metric("pose/palm_pos_error", self.palm_pos_error, position_mode_mask)
-        self._log_phase_metric("pose/palm_rot_error", self.palm_rot_error, position_mode_mask)
-        self._log_phase_metric("force/palm_rot_error", self.palm_rot_error, force_mode_mask)
+        self._log_phase_metric("palm_pos_error/pose", self.palm_pos_error, position_mode_mask)
+        self._log_phase_metric("palm_rot_error/pose", self.palm_rot_error, position_mode_mask)
+        self._log_phase_metric("palm_rot_error/force", self.palm_rot_error, force_mode_mask)
 
-        self.log_dict['pose/mode_fraction'] = position_mode_mask.float().mean()
-        self.log_dict['force/mode_fraction'] = force_mode_mask.float().mean()
-        self.log_dict['force/zero_force_fraction'] = self.force_tracking_zero_force.float().mean()
+        self.log_dict['mode_fraction/pose'] = position_mode_mask.float().mean()
+        self.log_dict['mode_fraction/force'] = force_mode_mask.float().mean()
+        self.log_dict['zero_force_fraction/force'] = self.force_tracking_zero_force.float().mean()
 
     def _pre_compute_observations_callback(self):
         force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
@@ -402,10 +399,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
 
         force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
         if not torch.any(force_mode_mask):
-            self.log_dict['force/force_error_x'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['force/force_error_y'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['force/force_error_z'] = torch.tensor(0.0, device=self.device)
-            self.log_dict['force/force_error_norm'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force_error_x/force'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force_error_y/force'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force_error_z/force'] = torch.tensor(0.0, device=self.device)
+            self.log_dict['force_error_norm/force'] = torch.tensor(0.0, device=self.device)
             return
 
         left_force_error = self.left_applied_force_yaw - self.left_force_cmd
@@ -424,10 +421,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
             torch.linalg.norm(left_force_error, dim=1) + torch.linalg.norm(right_force_error, dim=1)
         )
 
-        self.log_dict['force/force_error_x'] = self.force_error_x[force_mode_mask].mean()
-        self.log_dict['force/force_error_y'] = self.force_error_y[force_mode_mask].mean()
-        self.log_dict['force/force_error_z'] = self.force_error_z[force_mode_mask].mean()
-        self.log_dict['force/force_error_norm'] = self.force_error_norm[force_mode_mask].mean()
+        self.log_dict['force_error_x/force'] = self.force_error_x[force_mode_mask].mean()
+        self.log_dict['force_error_y/force'] = self.force_error_y[force_mode_mask].mean()
+        self.log_dict['force_error_z/force'] = self.force_error_z[force_mode_mask].mean()
+        self.log_dict['force_error_norm/force'] = self.force_error_norm[force_mode_mask].mean()
 
     def _reward_tracking_force(self):
         self._update_force_tracking_metrics()
@@ -435,7 +432,6 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         force_mode_mask = self.force_tracking_mode[:, 0] > 0.5
         reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         if not torch.any(force_mode_mask):
-            self.log_dict["force/reward_tracking_force"] = torch.tensor(0.0, device=self.device)
             return reward
 
         left_force_error = self.left_applied_force_yaw - self.left_force_cmd
@@ -449,7 +445,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         )
         self._log_phase_reward("force/reward_tracking_force", reward, force_mode_mask)
         self._accumulate_phase_episode_reward(
-            "force/reward_tracking_force", reward, force_mode_mask, "tracking_force"
+            "rew/upper_body/reward_tracking_force/force", reward, force_mode_mask, "tracking_force"
         )
         return reward
 
@@ -459,7 +455,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         reward = reward * position_mode_mask.float()
         self._log_phase_reward("pose/reward_tracking_palm_pos", reward, position_mode_mask)
         self._accumulate_phase_episode_reward(
-            "pose/reward_tracking_palm_pos", reward, position_mode_mask, "tracking_palm_pos"
+            "rew/upper_body/reward_tracking_palm_pos/pose", reward, position_mode_mask, "tracking_palm_pos"
         )
         return reward
 
@@ -470,10 +466,10 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self._log_phase_reward("pose/reward_tracking_palm_rot", reward, position_mode_mask)
         self._log_phase_reward("force/reward_tracking_palm_rot", reward, force_mode_mask)
         self._accumulate_phase_episode_reward(
-            "pose/reward_tracking_palm_rot", reward, position_mode_mask, "tracking_palm_rot"
+            "rew/upper_body/reward_tracking_palm_rot/pose", reward, position_mode_mask, "tracking_palm_rot"
         )
         self._accumulate_phase_episode_reward(
-            "force/reward_tracking_palm_rot", reward, force_mode_mask, "tracking_palm_rot"
+            "rew/upper_body/reward_tracking_palm_rot/force", reward, force_mode_mask, "tracking_palm_rot"
         )
         return reward
 
@@ -500,20 +496,20 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         self._log_phase_reward("pose/reward_tracking_upper_body_dofs", masked_reward, position_mode_mask)
         self._log_phase_reward("force/reward_tracking_upper_body_dofs", masked_reward, force_mode_mask)
         self._accumulate_phase_episode_reward(
-            "pose/reward_tracking_upper_body_dofs",
+            "rew/upper_body/reward_tracking_upper_body_dofs/pose",
             masked_reward,
             position_mode_mask,
             "tracking_upper_body_dofs",
         )
         self._accumulate_phase_episode_reward(
-            "force/reward_tracking_upper_body_dofs",
+            "rew/upper_body/reward_tracking_upper_body_dofs/force",
             masked_reward,
             force_mode_mask,
             "tracking_upper_body_dofs",
         )
 
-        self._log_phase_metric("pose/upper_body_dofs_error", self.upper_body_dofs_error, position_mode_mask)
-        self._log_phase_metric("force/upper_body_dofs_error", self.upper_body_dofs_error, force_mode_mask)
+        self._log_phase_metric("upper_body_dofs_error/pose", self.upper_body_dofs_error, position_mode_mask)
+        self._log_phase_metric("upper_body_dofs_error/force", self.upper_body_dofs_error, force_mode_mask)
 
         return masked_reward
 
