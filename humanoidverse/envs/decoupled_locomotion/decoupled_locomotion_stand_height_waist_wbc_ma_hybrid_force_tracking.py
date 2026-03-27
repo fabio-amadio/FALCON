@@ -604,11 +604,16 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         desired_origin_offset = torch.tensor([0.0, 0.0, 0.04], dtype=torch.float32, device=self.device)
         applied_color = (0.851, 0.144, 0.07)
         desired_color = (0.05, 0.65, 0.95)
-        anchor_line_color = Point(torch.tensor((0.95, 0.82, 0.1), dtype=torch.float32, device=self.device))
+        anchor_color = (0.95, 0.82, 0.1)
+        anchor_line_color = Point(torch.tensor(anchor_color, dtype=torch.float32, device=self.device))
+        anchor_line_offset = torch.tensor([0.0, 0.0, 0.01], dtype=torch.float32, device=self.device)
+        anchor_line_width = 0.005
 
         for env_id in force_mode_env_ids.tolist():
             left_origin = self.curr_left_palm_pos_world[env_id]
             right_origin = self.curr_right_palm_pos_world[env_id]
+            left_anchor = self.left_force_anchor_world[env_id]
+            right_anchor = self.right_force_anchor_world[env_id]
 
             self._draw_force_vector(
                 env_id,
@@ -634,18 +639,23 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
                 right_desired_force_world[env_id],
                 desired_color,
             )
-            self.simulator.draw_line(
-                Point(left_origin),
-                Point(self.left_force_anchor_world[env_id]),
-                anchor_line_color,
-                env_id,
-            )
-            self.simulator.draw_line(
-                Point(right_origin),
-                Point(self.right_force_anchor_world[env_id]),
-                anchor_line_color,
-                env_id,
-            )
+            self.simulator.draw_sphere(left_anchor, 0.02, anchor_color, env_id)
+            self.simulator.draw_sphere(right_anchor, 0.02, anchor_color, env_id)
+            for _ in range(5):
+                start_jitter = torch.rand(3, device=self.device) * anchor_line_width
+                end_jitter = torch.rand(3, device=self.device) * anchor_line_width
+                self.simulator.draw_line(
+                    Point(left_origin + anchor_line_offset + start_jitter),
+                    Point(left_anchor + anchor_line_offset + end_jitter),
+                    anchor_line_color,
+                    env_id,
+                )
+                self.simulator.draw_line(
+                    Point(right_origin + anchor_line_offset + start_jitter),
+                    Point(right_anchor + anchor_line_offset + end_jitter),
+                    anchor_line_color,
+                    env_id,
+                )
 
     def _draw_debug_vis(self):
         hand_pose_debug_enabled = bool(self._hand_pose_debug_cfg_get("enabled", False)) or bool(
