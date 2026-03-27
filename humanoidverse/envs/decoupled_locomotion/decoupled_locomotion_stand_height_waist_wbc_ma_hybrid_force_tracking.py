@@ -604,6 +604,7 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
         desired_origin_offset = torch.tensor([0.0, 0.0, 0.04], dtype=torch.float32, device=self.device)
         applied_color = (0.851, 0.144, 0.07)
         desired_color = (0.05, 0.65, 0.95)
+        anchor_line_color = Point(torch.tensor((0.95, 0.82, 0.1), dtype=torch.float32, device=self.device))
 
         for env_id in force_mode_env_ids.tolist():
             left_origin = self.curr_left_palm_pos_world[env_id]
@@ -632,6 +633,18 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
                 right_origin + desired_origin_offset,
                 right_desired_force_world[env_id],
                 desired_color,
+            )
+            self.simulator.draw_line(
+                Point(left_origin),
+                Point(self.left_force_anchor_world[env_id]),
+                anchor_line_color,
+                env_id,
+            )
+            self.simulator.draw_line(
+                Point(right_origin),
+                Point(self.right_force_anchor_world[env_id]),
+                anchor_line_color,
+                env_id,
             )
 
     def _draw_debug_vis(self):
