@@ -5,6 +5,7 @@ import torch
 from humanoidverse.envs.decoupled_locomotion.decoupled_locomotion_stand_height_waist_wbc_ma_hand_pose import (
     LeggedRobotDecoupledLocomotionStanceHeightWBCForceHandPose,
 )
+from humanoidverse.envs.env_utils.visualization import Point
 
 
 class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
@@ -577,3 +578,72 @@ class LeggedRobotDecoupledLocomotionStanceHeightWBCHybridForceTracking(
 
     def _get_obs_right_force_cmd(self):
         return self.right_force_cmd
+
+    def _draw_force_vector(self, env_id, origin, force_world, color, force_scale=0.015, line_width=0.01):
+        color_point = Point(torch.tensor(color, dtype=torch.float32, device=self.device))
+        end_point = origin + force_world * force_scale
+        for _ in range(10):
+            start_jitter = torch.rand(3, device=self.device) * line_width
+            end_jitter = torch.rand(3, device=self.device) * line_width
+            self.simulator.draw_line(
+                Point(origin + start_jitter),
+                Point(end_point + end_jitter),
+                color_point,
+                env_id,
+            )
+
+    def _draw_force_tracking_debug_vis(self):
+        force_mode_env_ids = torch.where(self.force_tracking_mode[:, 0] > 0.5)[0]
+        if len(force_mode_env_ids) == 0:
+            return
+
+        _, yaw_frame_rot = self._get_yaw_frame_pose()
+        left_desired_force_world = quat_rotate(yaw_frame_rot, self.left_force_cmd)
+        right_desired_force_world = quat_rotate(yaw_frame_rot, self.right_force_cmd)
+
+        desired_origin_offset = torch.tensor([0.0, 0.0, 0.04], dtype=torch.float32, device=self.device)
+        applied_color = (0.851, 0.144, 0.07)
+        desired_color = (0.05, 0.65, 0.95)
+
+        for env_id in force_mode_env_ids.tolist():
+            left_origin = self.curr_left_palm_pos_world[env_id]
+            right_origin = self.curr_right_palm_pos_world[env_id]
+
+            self._draw_force_vector(
+                env_id,
+                left_origin,
+                self.apply_force_tensor[env_id, self.left_hand_link_index, :],
+                applied_color,
+            )
+            self._draw_force_vector(
+                env_id,
+                right_origin,
+                self.apply_force_tensor[env_id, self.right_hand_link_index, :],
+                applied_color,
+            )
+            self._draw_force_vector(
+                env_id,
+                left_origin + desired_origin_offset,
+                left_desired_force_world[env_id],
+                desired_color,
+            )
+            self._draw_force_vector(
+                env_id,
+                right_origin + desired_origin_offset,
+                right_desired_force_world[env_id],
+                desired_color,
+            )
+
+    def _draw_debug_vis(self):
+        hand_pose_debug_enabled = bool(self._hand_pose_debug_cfg_get("enabled", False)) or bool(
+            getattr(self.simulator, "vis_hand_pose_tracking", False)
+        )
+        force_debug_enabled = bool(getattr(self.simulator, "vis_force_range", False))
+
+        self.simulator.clear_lines()
+
+        if force_debug_enabled:
+            self._draw_force_tracking_debug_vis()
+
+        if hand_pose_debug_enabled:
+            self._draw_hand_pose_debug_vis()
